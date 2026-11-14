@@ -20,7 +20,7 @@ function publicState(s: State) {
   const games = Object.values(s.games).map(g => ({
     appid: g.appid, name: g.name, owners: g.owners, excluded: g.excluded,
     difficulty: g.difficulty, stars: g.stars, expectedHours: expected(g),
-    tags: g.tags.slice(0, 6),
+    tags: g.tags.slice(0, 6), reason: g.excludeReason ?? null, manual: g.excludedManual !== undefined,
   })).sort((a, b) => a.name.localeCompare(b.name))
   return { players: s.players, assignments: s.assignments, games, settings: s.settings, scores, month, lastSync: s.lastSync }
 }
@@ -57,6 +57,9 @@ export default async (req: Request, context: Context) => {
         else { p = { id: uid(), nick, steamId, persona: sum.persona, avatar: sum.avatar, joinedAt: Date.now() }; s.players.push(p) }
         const count = await addOwnedToPool(s, steamId)
         await save(s)
+        // classify the newly added games in the background
+        if (Object.values(s.games).some((g: any) => g.needsMeta))
+          context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
         return Response.json({ player: p, gamesAdded: count, state: publicState(s) })
       }
 
@@ -69,12 +72,18 @@ export default async (req: Request, context: Context) => {
         const done = new Set(s.assignments.filter(a => a.playerId === p.id).map(a => a.appid))
         const pool = Object.values(s.games).filter(g => !g.excluded && !busy.has(g.appid) && !done.has(g.appid))
         if (!pool.length) return err("Пул ігор порожній")
-        let g = pool[Math.floor(Math.random() * pool.length)] as Game & { needsMeta?: boolean }
-        if (g.needsMeta) {
-          const m = await fetchMeta(g.appid, g.name)
-          g = computeGame(g.appid, m, g.owners, g)
-          s.games[String(g.appid)] = g
+        let g: (Game & { needsMeta?: boolean }) | null = null
+        for (let tries = 0; tries < 6 && pool.length; tries++) {
+          const i = Math.floor(Math.random() * pool.length)
+          let c = pool[i] as Game & { needsMeta?: boolean }
+          if (c.needsMeta) {
+            c = computeGame(c.appid, await fetchMeta(c.appid, c.name), c.owners, c)
+            s.games[String(c.appid)] = c
+          }
+          if (!c.excluded) { g = c; break }
+          pool.splice(i, 1)  // turned out not completable — try another
         }
+        if (!g) { await save(s); return err("Не вдалося знайти гру, спробуй ще раз") }
         const base = await playtime(p.steamId, g.appid).catch(() => null)
         const a: Assignment = {
           id: uid(), playerId: p.id, appid: g.appid, name: g.name, status: "active",
@@ -126,7 +135,7 @@ export default async (req: Request, context: Context) => {
       case "game": {
         const g = s.games[String(body.appid)]
         if (!g) return err("Гру не знайдено")
-        if (typeof body.excluded === "boolean") g.excluded = body.excluded
+        if (typeof body.excluded === "boolean") { g.excluded = body.excluded; g.excludedManual = body.excluded }
         if (body.expectedHours !== undefined) g.expectedOverride = body.expectedHours === null ? undefined : Number(body.expectedHours)
         if (body.difficulty !== undefined) {
           g.difficultyOverride = body.difficulty === null ? undefined : Math.max(1, Math.min(3, Number(body.difficulty)))

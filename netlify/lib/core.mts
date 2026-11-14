@@ -1,14 +1,19 @@
 import { getStore } from "@netlify/blobs"
 import seedMeta from "../../data/meta.json" with { type: "json" }
+import curatedRaw from "../../data/curated.json" with { type: "json" }
+// hand-checked decisions for games the automatic rules get wrong
+const curated = curatedRaw as Record<string, { in: boolean; reason?: string }>
 
 // ---------- types ----------
 export type Meta = {
   name: string; tags: string[]; median: number; average: number
   pos: number; neg: number; ach: number[]
+  type?: string | null; cats?: string[]; genres?: string[]
 }
 export type Game = Meta & {
   appid: number; owners: string[]; excluded: boolean
   difficulty: number; stars: number; expectedHours: number; expectedOverride?: number; difficultyOverride?: number
+  excludeReason?: string | null; excludedManual?: boolean
 }
 export type Player = { id: string; nick: string; steamId: string; persona: string; avatar: string; joinedAt: number }
 export type Assignment = {
@@ -50,7 +55,28 @@ const EASY: Record<string, number> = {
   "Visual Novel": -0.4, "Family Friendly": -0.2, "Clicker": -0.3, "Idler": -0.4,
   "Short": -0.15, "Interactive Fiction": -0.3, "Story Rich": -0.05,
 }
-const NOT_COMPLETABLE = ["Massively Multiplayer", "Free to Play", "MOBA", "Battle Royale", "PvP", "Competitive", "eSports", "MMORPG"]
+// ---------- what counts as "not completable" ----------
+const ONLINE = ["Massively Multiplayer", "MMORPG", "Free to Play", "PvP", "Competitive", "Battle Royale",
+  "MOBA", "eSports", "Hero Shooter", "Extraction Shooter", "Social Deduction", "Party Game", "Team-Based", "Tactical Shooter"]
+const ENDLESS = ["Sandbox", "Open World Survival Craft", "Clicker", "Idler", "Building", "City Builder",
+  "Colony Sim", "Automation", "Life Sim", "Farming Sim", "Board Game", "Card Game", "Simulation", "Racing",
+  "Sports", "Fighting", "Rhythm", "Trading Card Game", "Auto Battler"]
+const NOT_GAME = ["Software", "Utilities", "Design & Illustration", "Animation & Modeling", "Video Production",
+  "Audio Production", "Photo Editing", "Game Development", "Web Publishing", "Education", "Benchmark"]
+const STORY = ["Story Rich", "Singleplayer", "Linear", "Narrative", "Choices Matter", "Multiple Endings", "Campaign"]
+
+/** Returns why a game can't be "completed", or null if it can */
+export function excludeReason(m: Meta): string | null {
+  const t = m.tags, top = (n: number) => t.slice(0, n)
+  if (m.type && m.type !== "game") return "Не гра (" + m.type + ")"
+  if ([...top(6), ...(m.genres ?? [])].some(x => NOT_GAME.includes(x))) return "Програма, а не гра"
+  if (m.cats && m.cats.length && !m.cats.includes("Single-player")) return "Немає одиночного режиму"
+  if (top(6).some(x => ONLINE.includes(x))) return "Онлайн / PvP гра"
+  if (top(4).some(x => ENDLESS.includes(x)) && !top(8).some(x => STORY.slice(0, 1).includes(x) || ["Linear", "Narrative", "Multiple Endings", "Choices Matter"].includes(x)))
+    return "Немає кінця (пісочниця / симулятор)"
+  if (!m.cats?.length && !t.length) return null
+  return null
+}
 
 export function computeGame(appid: number, m: Meta, owners: string[], prev?: Game): Game {
   let tagScore = 0
@@ -70,10 +96,12 @@ export function computeGame(appid: number, m: Meta, owners: string[], prev?: Gam
   const stars = Math.min(5, Math.max(1, Math.round(((difficulty - 1) / 2) * 4) + 1))
   const med = m.median || m.average || 0
   const expectedHours = Math.round(Math.max(1, Math.min(80, med / 60)) * 10) / 10
-  const autoExclude = m.tags.slice(0, 5).some(t => NOT_COMPLETABLE.includes(t))
+  const c = curated[String(appid)]
+  const reason = c ? (c.in ? null : c.reason ?? "Виключено") : excludeReason(m)
   return {
     ...m, appid, owners,
-    excluded: prev ? prev.excluded : autoExclude,
+    excludeReason: reason, excludedManual: prev?.excludedManual,
+    excluded: prev?.excludedManual ?? !!reason,
     difficulty, stars, expectedHours,
     expectedOverride: prev?.expectedOverride, difficultyOverride: prev?.difficultyOverride,
   }
@@ -135,16 +163,21 @@ export async function playtime(steamId: string, appid: number): Promise<number |
   return best
 }
 export async function fetchMeta(appid: number, name: string): Promise<Meta> {
-  const [spy, ach] = await Promise.allSettled([
+  const [spy, ach, store] = await Promise.allSettled([
     sj(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`),
     sj(`https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid=${appid}`),
+    sj(`https://store.steampowered.com/api/appdetails?appids=${appid}&filters=categories,genres,basic&l=english`),
   ])
+  const st: any = store.status === "fulfilled" ? store.value?.[appid]?.data ?? {} : {}
   const s: any = spy.status === "fulfilled" ? spy.value : {}
   const a: any = ach.status === "fulfilled" ? ach.value : {}
   const tags = s.tags && !Array.isArray(s.tags) ? Object.keys(s.tags).slice(0, 20) : []
   return {
     name, tags, median: s.median_forever ?? 0, average: s.average_forever ?? 0,
     pos: s.positive ?? 0, neg: s.negative ?? 0,
+    type: st.type ?? null,
+    cats: (st.categories ?? []).map((c: any) => c.description),
+    genres: (st.genres ?? []).map((g: any) => g.description),
     ach: (a.achievementpercentages?.achievements ?? []).map((x: any) => parseFloat(x.percent)).sort((x: number, y: number) => x - y),
   }
 }
@@ -154,7 +187,18 @@ const store = () => getStore({ name: "challenge", consistency: "strong" })
 
 export async function load(): Promise<State> {
   const s = (await store().get("state", { type: "json" })) as State | null
-  if (s) { s.settings = { ...DEFAULT_SETTINGS, ...s.settings }; return s }
+  if (s) {
+    s.settings = { ...DEFAULT_SETTINGS, ...s.settings }
+    // re-apply current rules on every load (keeps manual choices); merge bundled store data if missing
+    const seed = seedMeta as Record<string, Meta>
+    for (const [id, g] of Object.entries(s.games)) {
+      if ((g as any).needsMeta) continue
+      const sm = seed[id]
+      const m = g.cats === undefined && sm?.cats !== undefined ? { ...g, type: sm.type, cats: sm.cats, genres: sm.genres } : g
+      s.games[id] = computeGame(g.appid, m, g.owners, g)
+    }
+    return s
+  }
   // first run: seed the pool from bundled metadata (owners filled when players join)
   const games: Record<string, Game> = {}
   for (const [id, m] of Object.entries(seedMeta as Record<string, Meta & { owners?: string[] }>)) {
