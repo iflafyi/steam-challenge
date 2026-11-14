@@ -3,7 +3,7 @@
 Сайт для челенджу друзів із сімейною бібліотекою Steam: кожен ролить випадкову гру, сайт сам рахує час у грі через Steam API, нараховує бали за складність і швидкість проходження. Хто в кінці місяця має найменше балів — купує гру.
 
 **Сайт:** https://iflafyi.github.io/steam-challenge/ (GitHub Pages, папка `docs/`)
-**API/сервер:** https://steam-challenge-family.netlify.app (Netlify Functions + Blobs, тут же дзеркало сайту)
+**API/сервер:** Supabase Edge Function `steam-challenge` + Postgres (таблиця `sc_state`)
 
 ## Як це працює
 - **Гравці** додаються з ніком і посиланням на профіль Steam (профіль і «Інформація про ігри» мають бути відкриті).
@@ -17,9 +17,9 @@
 - **Модифікатор місяця** (хорори, інді ×2, коротунчики, хардкор…), **таймер до кінця місяця**, **архів місяців**, **бейджі** і **профілі гравців**.
 
 ## Технічно
-- `docs/index.html` — весь інтерфейс (GitHub Pages віддає його з `docs/`, запити йдуть на Netlify API)
-- `netlify/functions/api.mts` — API (`/api/state`, `join`, `roll`, `sync`, `finish`, `manual`, `game`, `settings`, `remove-player`)
-- `netlify/functions/sync-cron.mts` — автооновлення часу кожні 30 хв
-- `netlify/lib/core.mts` — Steam API, формула складності і балів, сховище (Netlify Blobs)
+- `docs/index.html` — весь інтерфейс (GitHub Pages), запити йдуть на Supabase
+- `supabase/functions/steam-challenge/index.ts` — API (`state`, `join`, `roll`, `reroll`, `finish`, `manual`, `confirm`, `duel-*`, `mod`, `note`, `game`, `settings`, PIN-дії, `cron`…)
+- `supabase/functions/steam-challenge/core.ts` — Steam API, складність, бали, бейджі, сховище
+- pg_cron кожні 30 хв викликає `/cron` — оновлює час, раз на добу бібліотеки
 - `data/meta.json` — передзібрані теги/медіанний час/ачівки для стартового пулу
-- Ключ Steam API зберігається тільки в змінній оточення Netlify `STEAM_API_KEY` (не в коді).
+- Ключ Steam API — тільки в секретах Supabase `STEAM_API_KEY` (не в коді).

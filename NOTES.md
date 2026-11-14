@@ -1,22 +1,24 @@
 # Нотатки проєкту (контекст для нових чатів)
 
-- Netlify site: `steam-challenge-family` (id 74aa3d91-5e58-4a5f-8a15-c8c33211695c), деплой через Netlify MCP `deploy-site`.
-- Env var `STEAM_API_KEY` = ключ адміна сім'ї (виставлено в Netlify).
+- **Бекенд з 14.11.2026 — Supabase** (Netlify закинуто: закінчились кредити). Проєкт `nsdjlohfagslhfaygstp` (Lixer Org, eu-west-1, спільний з іншими іграми — таблиці з префіксом `sc_`).
+- Edge Function `steam-challenge` (verify_jwt=false, авторизація через PIN усередині): URL `https://nsdjlohfagslhfaygstp.supabase.co/functions/v1/steam-challenge/<action>`. Код — `supabase/functions/steam-challenge/` (index.ts + core.ts + curated.json). Задеплоєний вхід — один рядок `import "https://raw.githubusercontent.com/iflafyi/steam-challenge/<SHA>/supabase/functions/steam-challenge/index.ts"`: щоб оновити бекенд — запушити, потім Supabase MCP `deploy_edge_function` з новим SHA.
+- Стан — один рядок jsonb у таблиці `sc_state` (key='state'), RLS увімкнено без політик (тільки service role). `data/meta.json` функція читає з GitHub raw лише при `import`.
+- Secret `STEAM_API_KEY` у Supabase Edge Function secrets (додано вручну в дашборді).
+- pg_cron job `steam-challenge-sync` кожні 30 хв → POST `/cron` (синк часу, раз на добу бібліотеки, догрузка метаданих нових ігор).
+- Дія `import` — одноразовий перенос зі старого Netlify API (працює тільки коли таблиця порожня). Вже виконано.
 - Учасники: Гоша, Маркіян, Костя. Адмін сім'ї — Steam «Вуйчіч» 76561198429562745; Костя — «Jackpot» 76561198983634521. ID Гоші/Маркіяна ще не отримані.
-- Стан (гравці, ролли, бали, налаштування) — Netlify Blobs, store `challenge`, ключ `state`.
 - Відкрите питання: чи бачить Steam API час у позичених через сім'ю іграх (поле `tracked` в assignment). Якщо ні — працює ручне введення годин.
 - Можливі наступні кроки: перевірка проходження через ачівки, телеграм-сповіщення, картка гри (HLTB, трейлер), голосування за складність.
-- Фільтр «не можна пройти» (`excludeReason` у core.mts): тип не «game», програми, без категорії Single-player (Steam Store), онлайн/PvP теги, пісочниці/симулятори без сюжету. Ручні рішення для ігор, де правила помиляються — `data/curated.json` (appid → in/out). Ручний вибір на сайті (`excludedManual`) має пріоритет над усім.
-- Нові ігри від нових гравців класифікуються у фоні (`enrich.mts`, викликається після join) і ще раз перевіряються при ролі.
-- Сімейний доступ: `shareable` = категорія Steam Store «Family Sharing». Ігри без неї (Ubisoft/EA/Rockstar — AC, Far Cry, GTA, RDR2…) випадають тільки власнику (`eligible()` у core.mts).
+- Фільтр «не можна пройти» (`excludeReason` у core.ts): тип не «game», програми, без категорії Single-player (Steam Store), онлайн/PvP теги, пісочниці/симулятори без сюжету. Ручні рішення для ігор, де правила помиляються — `data/curated.json` (appid → in/out). Ручний вибір на сайті (`excludedManual`) має пріоритет над усім.
+- Нові ігри від нових гравців класифікуються у фоні (`enrich()` в index.ts через EdgeRuntime.waitUntil, порціями + у cron) і ще раз перевіряються при ролі.
+- Сімейний доступ: `shareable` = категорія Steam Store «Family Sharing». Ігри без неї (Ubisoft/EA/Rockstar — AC, Far Cry, GTA, RDR2…) випадають тільки власнику (`eligible()` у core.ts).
 - Пул = ігри всіх гравців + `libraries` (члени сім'ї, що не грають; додаються на вкладці «Правила»). Бібліотеки оновлюються раз на добу в sync-cron і кнопкою.
 - Зареєстровані: glekatrop = Вуйчіч (адмін), Bo Sinn = Jackpot (Костя). Гоша/Маркіян — ще ні.
-- Сайт перенесено на GitHub Pages (`docs/`, гілка main). API залишився на Netlify; CORS дозволено для https://iflafyi.github.io (ALLOWED в api.mts). Деплой API: Netlify MCP deploy-site з папки репозиторію.
+- Сайт — GitHub Pages (`docs/index.html`, гілка main), `API_BASE` = URL функції Supabase. CORS: `ALLOWED` в index.ts (github.io + localhost:8787).
 - **PIN (листопад 2026):** у гравця `pinHash` (SHA-256 від `steam-challenge:<id>:<pin>`), 5 помилок → блок 10 хв. Старі гравці без PIN ставлять його при першому виборі себе (`set-pin`, хто перший — той і власник). Скинути PIN може інший гравець своїм PIN (`reset-pin`). Усі дії з `playerId`+`pin`; спільні (пул, правила, модифікатор) — PIN будь-якого гравця. PIN зберігається в localStorage браузера (`pin:<id>`).
 - **Ре-рол:** статус `rerolled`, штраф `rerollPenalty`, ліміт `rerollsPerMonth` (× `rerolls` модифікатора). У дуелі заборонений.
-- **Ручні години:** `manualOk=false` до підтвердження другом (`confirm`); непідтверджені бали не йдуть у таблицю (`counts()` у core). Відхилення повертає гру в active (або 0 балів, якщо вже є інша активна).
+- **Ручні години:** `manualOk=false` до підтвердження другом (`confirm`); непідтверджені бали не йдуть у таблицю (`counts()` у core.ts). Відхилення повертає гру в active (або 0 балів, якщо вже є інша активна).
 - **Дуелі:** `duels[]` (pending/active/done/declined), обидва отримують одну гру при `duel-accept`, перший «Пройшов» отримує `duelBonus` у `bonuses[]`.
-- **Модифікатори місяця:** `MODS` у core.mts, `mods[month]`; фільтр пулу при ролі + множник `mult` фіксується в assignment. Обирається вручну або «Зролити».
+- **Модифікатори місяця:** `MODS` у core.ts, `mods[month]`; фільтр пулу при ролі + множник `mult` фіксується в assignment. Обирається вручну або «Зролити».
 - **Архів/бейджі:** `monthScores`, `monthResults` (👑/🛒 завершених місяців), `playerBadges`, `notes[month]` — що купив програвший. Вкладка «Архів», профіль — клік по аватарці.
-- Локальний тест: бандл api.mts через esbuild з моком `@netlify/blobs` + мок fetch для Steam.
-- **УВАГА (14.11.2026):** деплой на Netlify не пройшов — «account credit usage exceeded». На main сайт (`docs/index.html`) повернуто до старої версії, а сервер на Netlify і так працює на старому API. Нові функції лежать у гілці `features-v2` (а код API/core у main уже новий, але НЕ задеплоєний). Коли з'являться кредити: `git checkout features-v2 -- docs/index.html`, закомітити, задеплоїти через Netlify MCP deploy-site. Порада: cron кожні 30 хв їсть кредити — можна рідше (наприклад щогодини).
+- Перевірка типів: `deno check index.ts` (в окремій папці, без package.json поруч).
