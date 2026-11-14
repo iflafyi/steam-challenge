@@ -19,3 +19,4 @@
 - **Модифікатори місяця:** `MODS` у core.mts, `mods[month]`; фільтр пулу при ролі + множник `mult` фіксується в assignment. Обирається вручну або «Зролити».
 - **Архів/бейджі:** `monthScores`, `monthResults` (👑/🛒 завершених місяців), `playerBadges`, `notes[month]` — що купив програвший. Вкладка «Архів», профіль — клік по аватарці.
 - Локальний тест: бандл api.mts через esbuild з моком `@netlify/blobs` + мок fetch для Steam.
+- **УВАГА (14.11.2026):** деплой на Netlify не пройшов — «account credit usage exceeded». На main сайт (`docs/index.html`) повернуто до старої версії, а сервер на Netlify і так працює на старому API. Нові функції лежать у гілці `features-v2` (а код API/core у main уже новий, але НЕ задеплоєний). Коли з'являться кредити: `git checkout features-v2 -- docs/index.html`, закомітити, задеплоїти через Netlify MCP deploy-site. Порада: cron кожні 30 хв їсть кредити — можна рідше (наприклад щогодини).
