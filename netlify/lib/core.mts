@@ -16,10 +16,13 @@ export type Game = Meta & {
   excludeReason?: string | null; excludedManual?: boolean
   shareable: boolean  // can be borrowed via Steam Family; false → only owners can get it
 }
-export type Player = { id: string; nick: string; steamId: string; persona: string; avatar: string; joinedAt: number }
+export type Player = {
+  id: string; nick: string; steamId: string; persona: string; avatar: string; joinedAt: number
+  pinHash?: string; pinFails?: number; pinLockUntil?: number
+}
 export type Assignment = {
   id: string; playerId: string; appid: number; name: string
-  status: "active" | "done" | "gaveup"
+  status: "active" | "done" | "gaveup" | "rerolled"
   rolledAt: number; finishedAt?: number
   baseline: number          // minutes at roll time
   current: number           // latest seen minutes
@@ -27,12 +30,23 @@ export type Assignment = {
   manualMinutes?: number    // manual override
   difficulty: number; expectedHours: number
   points?: number; breakdown?: string
+  speed?: number                         // speed multiplier at finish
+  mult?: number; modLabel?: string       // month modifier bonus fixed at roll time
+  duelId?: string
+  manualOk?: boolean; confirmedBy?: string // manual hours need a friend's confirmation
+}
+export type Bonus = { id: string; playerId: string; points: number; reason: string; at: number; assignmentId?: string }
+export type Duel = {
+  id: string; from: string; to: string; status: "pending" | "active" | "done" | "declined"
+  createdAt: number; appid?: number; name?: string; winner?: string
 }
 export type Settings = {
   basePerDifficulty: number   // points per difficulty unit (difficulty 1..3)
   lengthMultiplier: number    // bonus = mult * sqrt(expected hours)
   speedMin: number; speedMax: number
   giveUpPenalty: number
+  rerollPenalty: number; rerollsPerMonth: number
+  duelBonus: number
 }
 export type Library = { steamId: string; persona: string; addedAt: number }
 export type State = {
@@ -40,6 +54,9 @@ export type State = {
   lastLibraryRefresh?: number
   players: Player[]; assignments: Assignment[]
   games: Record<string, Game>; settings: Settings; lastSync?: number
+  bonuses?: Bonus[]; duels?: Duel[]
+  mods?: Record<string, string>    // month → modifier id
+  notes?: Record<string, string>   // month → what the loser bought
 }
 
 // libraries the starting pool was built from (until these people join as players)
@@ -50,7 +67,24 @@ const SEED_LIBRARIES: Library[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   basePerDifficulty: 10, lengthMultiplier: 2, speedMin: 0.7, speedMax: 1.5, giveUpPenalty: 5,
+  rerollPenalty: 3, rerollsPerMonth: 1, duelBonus: 10,
 }
+
+// ---------- month modifiers ----------
+type G = { tags: string[]; difficulty: number; expectedHours: number; expectedOverride?: number }
+export type Mod = { id: string; icon: string; name: string; desc: string; filter?: (g: G) => boolean; mult?: (g: G) => number; rerolls?: number }
+const hasTag = (g: G, ...t: string[]) => g.tags.some(x => t.includes(x))
+export const MODS: Mod[] = [
+  { id: "none", icon: "⚪", name: "Звичайний місяць", desc: "Без модифікатора" },
+  { id: "horror", icon: "👻", name: "Місяць хорорів", desc: "Випадають тільки ігри з тегом Horror", filter: g => hasTag(g, "Horror", "Psychological Horror", "Survival Horror") },
+  { id: "indie", icon: "🧩", name: "Інді-місяць", desc: "Ігри з тегом Indie дають ×2 балів", mult: g => hasTag(g, "Indie") ? 2 : 1 },
+  { id: "short", icon: "⚡", name: "Коротунчики", desc: "Тільки ігри до 8 годин", filter: g => expected(g) <= 8 },
+  { id: "hardcore", icon: "💀", name: "Хардкор", desc: "Тільки складність від 2, бали ×1.5", filter: g => g.difficulty >= 2, mult: () => 1.5 },
+  { id: "long", icon: "🏰", name: "Довгий місяць", desc: "Тільки ігри від 15 годин, бали ×1.2", filter: g => expected(g) >= 15, mult: () => 1.2 },
+  { id: "rpg", icon: "🐉", name: "RPG-місяць", desc: "Тільки RPG", filter: g => hasTag(g, "RPG", "Action RPG", "JRPG", "CRPG", "Party-Based RPG") },
+  { id: "rerolls", icon: "🎲", name: "Азартний місяць", desc: "Ре-ролів утричі більше", rerolls: 3 },
+]
+export const modFor = (s: State, month: string) => MODS.find(m => m.id === s.mods?.[month]) ?? MODS[0]
 
 // ---------- difficulty ----------
 const HARD: Record<string, number> = {
@@ -126,9 +160,10 @@ export function scoreFor(a: Assignment, s: Settings) {
   const base = s.basePerDifficulty * a.difficulty
   const len = s.lengthMultiplier * Math.sqrt(exp)
   const speed = Math.max(s.speedMin, Math.min(s.speedMax, exp / hours))
-  const points = Math.round((base + len) * speed)
-  const breakdown = `(${s.basePerDifficulty}×${a.difficulty} складн. + ${s.lengthMultiplier}×√${exp} год) × ${speed.toFixed(2)} швидкість = ${points}`
-  return { points, breakdown }
+  const mult = a.mult ?? 1
+  const points = Math.round((base + len) * speed * mult)
+  const breakdown = `(${s.basePerDifficulty}×${a.difficulty} складн. + ${s.lengthMultiplier}×√${exp} год) × ${speed.toFixed(2)} швидкість${mult !== 1 ? ` × ${mult} (${a.modLabel ?? "модифікатор"})` : ""} = ${points}`
+  return { points, breakdown, speed: Math.round(speed * 100) / 100 }
 }
 
 // ---------- Steam ----------
@@ -220,6 +255,27 @@ export async function load(): Promise<State> {
 }
 export async function save(s: State) { await store().setJSON("state", s) }
 
+/** points that count for the leaderboard: finished games (manual hours confirmed) + bonuses */
+export const counts = (a: Assignment) =>
+  a.status !== "active" && a.points !== undefined && !!a.finishedAt && (a.manualMinutes === undefined || a.manualOk !== false)
+
+export function monthScores(s: State) {
+  const scores: Record<string, Record<string, number>> = {}
+  const add = (t: number, pid: string, pts: number) => {
+    const m = monthKey(t); scores[m] ??= {}; scores[m][pid] = (scores[m][pid] ?? 0) + pts
+  }
+  for (const a of s.assignments) if (counts(a)) add(a.finishedAt!, a.playerId, a.points!)
+  for (const b of s.bonuses ?? []) add(b.at, b.playerId, b.points)
+  return scores
+}
+
+// ---------- PIN ----------
+export async function pinHash(playerId: string, pin: string) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`steam-challenge:${playerId}:${pin}`))
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("")
+}
+export const validPin = (pin: unknown) => typeof pin === "string" && /^\d{4,6}$/.test(pin)
+
 export const monthKey = (t: number) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Warsaw", year: "numeric", month: "2-digit" }).format(new Date(t))
 
@@ -257,4 +313,63 @@ export async function refreshLibraries(s: State) {
   const ids = new Set([...s.players.map(p => p.steamId), ...(s.libraries ?? []).map(l => l.steamId)])
   for (const id of ids) { try { await addOwnedToPool(s, id) } catch { /* private or Steam down */ } }
   s.lastLibraryRefresh = Date.now()
+}
+
+// ---------- badges ----------
+export type Badge = { id: string; icon: string; name: string; desc: string }
+export const BADGES: Badge[] = [
+  { id: "first", icon: "🩸", name: "Перша кров", desc: "Пройти першу гру" },
+  { id: "five", icon: "📚", name: "Колекціонер", desc: "Пройти 5 ігор" },
+  { id: "ten", icon: "🎖", name: "Ветеран", desc: "Пройти 10 ігор" },
+  { id: "speed", icon: "🏃", name: "Спідраннер", desc: "Пройти з максимальним множником швидкості" },
+  { id: "hard", icon: "💀", name: "Безсмертний", desc: "Пройти гру зі складністю 2.5+" },
+  { id: "souls", icon: "🗡", name: "Душі не продав", desc: "Пройти Souls-like" },
+  { id: "marathon", icon: "⏳", name: "Марафонець", desc: "Пройти гру на 30+ годин" },
+  { id: "turtle", icon: "🐢", name: "Черепаха", desc: "Грати вдвічі довше за очікуване" },
+  { id: "duel", icon: "⚔", name: "Дуелянт", desc: "Виграти дуель" },
+  { id: "gambler", icon: "🎲", name: "Азартний", desc: "Зробити ре-рол" },
+  { id: "quitter", icon: "🏳", name: "Капітулянт", desc: "Здатися 3 рази" },
+  { id: "champ", icon: "👑", name: "Чемпіон місяця", desc: "Посісти 1 місце за місяць" },
+  { id: "sponsor", icon: "🛒", name: "Спонсор", desc: "Купувати гру за останнє місце" },
+]
+
+/** winners/losers of finished months (everyone who had joined by then counts, 0 by default) */
+export function monthResults(s: State, scores: Record<string, Record<string, number>>, now = Date.now()) {
+  const cur = monthKey(now)
+  const res: Record<string, { champ: string[]; loser: string[] }> = {}
+  for (const m of Object.keys(scores)) {
+    if (m >= cur) continue
+    const ps = s.players.filter(p => monthKey(p.joinedAt) <= m)
+    if (ps.length < 2) continue
+    const v = ps.map(p => ({ id: p.id, pts: scores[m][p.id] ?? 0 }))
+    const hi = Math.max(...v.map(x => x.pts)), lo = Math.min(...v.map(x => x.pts))
+    res[m] = { champ: v.filter(x => x.pts === hi).map(x => x.id), loser: v.filter(x => x.pts === lo).map(x => x.id) }
+  }
+  return res
+}
+
+export function playerBadges(s: State, results: ReturnType<typeof monthResults>) {
+  const out: Record<string, string[]> = {}
+  for (const p of s.players) {
+    const mine = s.assignments.filter(a => a.playerId === p.id)
+    const done = mine.filter(a => a.status === "done" && counts(a))
+    const mins = (a: Assignment) => a.manualMinutes ?? Math.max(0, a.current - a.baseline)
+    const tags = (a: Assignment) => s.games[String(a.appid)]?.tags ?? []
+    const b: string[] = []
+    if (done.length >= 1) b.push("first")
+    if (done.length >= 5) b.push("five")
+    if (done.length >= 10) b.push("ten")
+    if (done.some(a => (a.speed ?? 0) >= s.settings.speedMax)) b.push("speed")
+    if (done.some(a => a.difficulty >= 2.5)) b.push("hard")
+    if (done.some(a => tags(a).some(t => t === "Souls-like" || t === "Soulslike"))) b.push("souls")
+    if (done.some(a => a.expectedHours >= 30)) b.push("marathon")
+    if (mine.some(a => a.status !== "rerolled" && mins(a) / 60 >= 2 * a.expectedHours && a.expectedHours >= 1)) b.push("turtle")
+    if ((s.duels ?? []).some(d => d.winner === p.id)) b.push("duel")
+    if (mine.some(a => a.status === "rerolled")) b.push("gambler")
+    if (mine.filter(a => a.status === "gaveup").length >= 3) b.push("quitter")
+    if (Object.values(results).some(r => r.champ.includes(p.id))) b.push("champ")
+    if (Object.values(results).some(r => r.loser.includes(p.id))) b.push("sponsor")
+    out[p.id] = b
+  }
+  return out
 }

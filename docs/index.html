@@ -66,6 +66,32 @@ tr.loser td{color:var(--bad)}
 .list .item img{width:120px;height:45px;object-fit:cover;border-radius:6px}
 .list .item.off{opacity:.45}
 .mini{width:70px;padding:5px 7px;font-size:13px}
+/* modal */
+.modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:8;padding:16px}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(560px,100%);max-height:90vh;overflow:auto;position:relative}
+.modal .x{position:absolute;right:10px;top:8px;background:none;border:0;color:var(--mut);font-size:22px;cursor:pointer}
+.pin{font-size:26px;letter-spacing:10px;text-align:center;width:100%;font-family:ui-monospace,monospace}
+.click{cursor:pointer}
+.click:hover b{color:var(--acc)}
+.badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.badge{font-size:15px;cursor:help}
+.bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.bgrid div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;font-size:12px}
+.bgrid div.off{opacity:.3;filter:grayscale(1)}
+.bgrid b{display:block;font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:12px 0}
+.stats div{background:var(--panel2);border-radius:10px;padding:8px 10px}
+.stats b{display:block;font-size:20px}
+.countdown{font-family:ui-monospace,monospace;font-size:26px;font-weight:800;text-align:center;letter-spacing:1px;margin:2px 0 10px}
+.modbar{background:linear-gradient(90deg,#2b2140,#1e2531);border:1px solid #4a3a6a;border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.duel{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
+.month{margin-bottom:14px}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#3a2a55;color:#d9c8ff;margin-left:6px}
+.chip.duelc{background:#4a2626;color:#ffc9c9}
+.pend{color:var(--gold)}
+.modgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.modgrid button{text-align:left;font-weight:500}
+.modgrid button.on{border-color:var(--acc);background:#1d3247}
 </style>
 </head>
 <body>
@@ -73,9 +99,11 @@ tr.loser td{color:var(--bad)}
   <header>
     <h1>🎲 Steam <span>Челендж</span></h1>
     <span class="pill" id="monthPill">—</span>
+    <span class="pill" id="modPill">—</span>
     <span class="pill" id="syncPill">—</span>
     <nav class="tabs">
       <button data-tab="main" class="on">Головна</button>
+      <button data-tab="archive">Архів</button>
       <button data-tab="pool">Ігри</button>
       <button data-tab="rules">Правила</button>
     </nav>
@@ -90,9 +118,11 @@ tr.loser td{color:var(--bad)}
           <select id="me" style="flex:1;min-width:180px"></select>
           <button class="btn" id="addToggle">+ Новий гравець</button>
         </div>
+        <div id="who" class="mut" style="margin-top:6px"></div>
         <div id="addForm" class="row hide" style="margin-top:10px">
           <input id="nick" placeholder="Нік (Гоша, Маркіян…)" style="flex:1;min-width:140px">
           <input id="steam" placeholder="Посилання на профіль Steam або ID" style="flex:2;min-width:220px">
+          <input id="joinPin" placeholder="PIN (4–6 цифр)" inputmode="numeric" maxlength="6" style="width:140px">
           <button class="btn pri" id="joinBtn">Додати</button>
         </div>
         <div class="roller" id="roller"><div class="empty">Обери себе і тисни РОЛ</div><div class="marker"></div><div class="strip" id="strip"></div></div>
@@ -104,9 +134,18 @@ tr.loser td{color:var(--bad)}
 
       <div class="card">
         <h2>Таблиця місяця</h2>
+        <div class="mut" style="text-align:center">До кінця місяця</div>
+        <div class="countdown" id="countdown">—</div>
+        <div class="modbar" id="modBar"></div>
         <table><thead><tr><th>#</th><th>Гравець</th><th>Пройдено</th><th style="text-align:right">Бали</th></tr></thead><tbody id="board"></tbody></table>
         <p class="mut" id="boardNote" style="margin-bottom:0"></p>
       </div>
+    </div>
+
+    <div class="card hide" id="pendCard" style="margin-top:16px">
+      <h2>✅ Години чекають підтвердження</h2>
+      <p class="mut" style="margin-top:0">Години, вписані вручну, зараховуються в таблицю, коли їх підтвердить хтось із друзів.</p>
+      <div id="pending"></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -118,9 +157,25 @@ tr.loser td{color:var(--bad)}
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h2>⚔ Дуелі</h2>
+      <p class="mut" style="margin-top:0">Двом гравцям випадає одна й та сама гра. Хто перший пройде — отримує <b id="duelBonusTxt">+10</b> балів зверху. Ре-рол у дуелі заборонений.</p>
+      <div class="row" id="duelForm"><select id="duelTo" style="flex:1;min-width:160px"></select><button class="btn pri" id="duelBtn">Викликати</button></div>
+      <div id="duels" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h2>Історія</h2>
       <table><thead><tr><th>Коли</th><th>Гравець</th><th>Гра</th><th>Час</th><th>Результат</th></tr></thead><tbody id="history"></tbody></table>
     </div>
+  </section>
+
+  <!-- ARCHIVE -->
+  <section id="tab-archive" class="hide">
+    <div class="card">
+      <h2>🏆 За весь час</h2>
+      <table><thead><tr><th>#</th><th>Гравець</th><th>Пройдено</th><th>Здався</th><th>👑</th><th>🛒</th><th>Бейджі</th><th style="text-align:right">Бали</th></tr></thead><tbody id="allTime"></tbody></table>
+    </div>
+    <div id="months" style="margin-top:16px"></div>
   </section>
 
   <!-- POOL -->
@@ -134,7 +189,7 @@ tr.loser td{color:var(--bad)}
           <select id="poolSort"><option value="name">За назвою</option><option value="diff">За складністю</option><option value="len">За тривалістю</option></select>
         </div>
       </div>
-      <p class="mut">Виключені ігри не випадають на ролі: онлайн/PvP, без одиночного режиму, пісочниці й симулятори без кінця, програми. Рішення можна змінити кнопкою — ручний вибір має пріоритет. Складність (1–3) і очікувані години можна виправити вручну — вони впливають на бали.</p>
+      <p class="mut">Виключені ігри не випадають на ролі: онлайн/PvP, без одиночного режиму, пісочниці й симулятори без кінця, програми. Рішення можна змінити кнопкою — ручний вибір має пріоритет. Складність (1–3) і очікувані години можна виправити вручну — вони впливають на бали. Для змін потрібно увійти під своїм PIN.</p>
       <div class="list" id="pool"></div>
       <div class="row" style="justify-content:center;margin-top:12px"><button class="btn" id="more">Показати ще</button></div>
     </div>
@@ -147,17 +202,23 @@ tr.loser td{color:var(--bad)}
         <h2>Як рахуються бали</h2>
         <p>Кожен тисне <b>РОЛ</b> і отримує випадкову гру зі спільного пулу. Поки гра активна, сайт кожні 30 хвилин бере з твого профілю Steam, скільки ти в неї награв.</p>
         <p>Коли пройшов — тиснеш <b>«Пройшов»</b>, і нараховуються бали:</p>
-        <p style="background:var(--panel2);padding:12px;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px" id="formula"></p>
+        <p style="background:var(--panel2);padding:12px;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap" id="formula"></p>
         <ul class="mut">
           <li><b>Складність</b> 1–3 рахується автоматично з тегів Steam (Souls-like, Difficult, Roguelike → вище; Casual, Cozy → нижче) і з того, наскільки рідкісні ачівки.</li>
           <li><b>Очікувана тривалість</b> — медіанний час гри всіх гравців (дані SteamSpy).</li>
-          <li><b>Швидкість</b> = очікувані години ÷ твої години. Пройшов швидше — множник більший (максимум і мінімум задаються справа).</li>
+          <li><b>Швидкість</b> = очікувані години ÷ твої години. Пройшов швидше — множник більший.</li>
           <li><b>Здатися</b> — штраф, і можна ролити нову гру.</li>
+          <li><b>Ре-рол</b> — замінити гру на іншу за менший штраф, обмежена кількість на місяць.</li>
+          <li><b>Години вручну</b> (коли Steam не бачить час) зараховуються після підтвердження другом.</li>
+          <li><b>PIN</b> — тільки ти можеш ролити, здаватися і вписувати години за себе. Забув PIN — друг скине його у твоєму профілі.</li>
+          <li><b>Модифікатор місяця</b> змінює, які ігри випадають, або дає множник балів.</li>
           <li>Хто в кінці місяця має <b>найменше балів</b> — купує гру 🛒</li>
         </ul>
       </div>
       <div class="card">
-        <h2>Налаштування формули</h2>
+        <h2>Модифікатор цього місяця</h2>
+        <div class="modgrid" id="modGrid"></div>
+        <h2 style="margin-top:22px">Налаштування формули</h2>
         <div id="settings" class="grid" style="gap:10px"></div>
         <div class="row" style="margin-top:12px"><button class="btn pri" id="saveSettings">Зберегти</button></div>
         <h2 style="margin-top:22px">Гравці</h2>
@@ -172,6 +233,7 @@ tr.loser td{color:var(--bad)}
   </section>
 </div>
 <div class="toast" id="toast"></div>
+<div class="modal hide" id="modal"><div class="box"><button class="x" onclick="closeModal()">×</button><div id="modalBody"></div></div></div>
 
 <script>
 // API lives on Netlify (holds the Steam key + data); the page itself can be served from GitHub Pages
@@ -180,83 +242,253 @@ const $ = s => document.querySelector(s)
 const img = id => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))
 const h = m => (m/60).toFixed(1)
+const MONTHS = ["січень","лютий","березень","квітень","травень","червень","липень","серпень","вересень","жовтень","листопад","грудень"]
+const monthName = k => { const [y,m]=k.split("-"); return `${MONTHS[+m-1]} ${y}` }
 let S = null, poolLimit = 60, rolling = false
 
 function toast(t, ms=3500){ const el=$("#toast"); el.textContent=t; el.style.display="block"; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display="none",ms) }
 async function api(action, body){
   const r = await fetch(API_BASE+"/api/"+action, body ? {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)} : {})
   const j = await r.json().catch(()=>({error:"Сервер не відповів"}))
-  if(!r.ok || j.error) throw new Error(j.error || r.statusText)
+  if(!r.ok || j.error){ const e = new Error(j.error || r.statusText); e.code = j.code; throw e }
   return j
 }
-function getMe(){ try{return localStorage.getItem("me")}catch{return null} }
-function setMe(v){ try{localStorage.setItem("me",v)}catch{} }
+// ---- who am I + PIN (kept in this browser only) ----
+const ls = { get:k=>{try{return localStorage.getItem(k)}catch{return null}}, set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}} }
+const getMe = () => ls.get("me")
+const setMe = v => ls.set("me", v)
+const myPin = () => getMe() ? ls.get("pin:"+getMe()) : null
+const authed = () => !!(getMe() && myPin() && playerById(getMe()))
+const me$ = () => ({ playerId: getMe(), pin: myPin() })
+/** call an action that needs my PIN; asks for it first if needed */
+async function act(action, body={}, opts={}){
+  if(!authed()){ await askPin(); if(!authed()) throw new Error("Спершу увійди під своїм PIN") }
+  try{ return await api(action, { ...me$(), ...body }) }
+  catch(e){ if(e.code==="BAD_PIN"){ ls.set("pin:"+getMe(), null); render() } throw e }
+}
+async function run(action, body, okMsg){
+  try{ const r = await act(action, body); S = r.state || r; render(); if(okMsg) toast(okMsg); return r }catch(e){ toast(e.message) }
+}
+
+// ---- modal ----
+let modalDone = null
+function openModal(html){ $("#modalBody").innerHTML = html; $("#modal").classList.remove("hide"); return new Promise(r=>modalDone=r) }
+function closeModal(v){ $("#modal").classList.add("hide"); const d=modalDone; modalDone=null; d?.(v) }
+$("#modal").onclick = e => { if(e.target.id==="modal") closeModal() }
+
+async function askPin(){
+  const p = playerById(getMe()); if(!p) return toast("Спершу обери себе у списку")
+  if(!p.hasPin){
+    const done = openModal(`<h2>🔒 Придумай PIN для ${esc(p.nick)}</h2>
+      <p class="mut">Тепер ролити, здаватися і вписувати години за тебе можна тільки з твоїм PIN. Він запам'ятається в цьому браузері. 4–6 цифр.</p>
+      <input class="pin" id="pin1" inputmode="numeric" maxlength="6" placeholder="••••" autocomplete="off">
+      <input class="pin" id="pin2" inputmode="numeric" maxlength="6" placeholder="ще раз" style="margin-top:8px" autocomplete="off">
+      <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" id="pinOk">Зберегти PIN</button></div>`)
+    $("#pin1").focus()
+    $("#pinOk").onclick = async () => {
+      const a=$("#pin1").value.trim(), b=$("#pin2").value.trim()
+      if(!/^\d{4,6}$/.test(a)) return toast("PIN — це 4–6 цифр")
+      if(a!==b) return toast("PIN-и не збігаються")
+      try{ const r = await api("set-pin",{playerId:p.id,pin:a}); ls.set("pin:"+p.id,a); S=r.state; closeModal(true); render(); toast("PIN збережено 🔒") }catch(e){ toast(e.message) }
+    }
+    return done
+  }
+  const done = openModal(`<h2>🔒 Вхід: ${esc(p.nick)}</h2>
+    <input class="pin" id="pin1" inputmode="numeric" maxlength="6" placeholder="PIN" autocomplete="off">
+    <p class="mut">Забув PIN? Попроси друга відкрити твій профіль (клік по аватарці) і натиснути «Скинути PIN».</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn pri" id="pinOk">Увійти</button></div>`)
+  $("#pin1").focus()
+  const go = async () => {
+    const a=$("#pin1").value.trim()
+    try{ await api("login",{playerId:p.id,pin:a}); ls.set("pin:"+p.id,a); closeModal(true); render(); toast("Увійшов 👋") }catch(e){ toast(e.message) }
+  }
+  $("#pinOk").onclick = go; $("#pin1").onkeydown = e => { if(e.key==="Enter") go() }
+  return done
+}
+
+// ---- helpers ----
 const stars = n => "★".repeat(n)+"☆".repeat(5-n)
-const playerById = id => S.players.find(p=>p.id===id)
+const playerById = id => S?.players.find(p=>p.id===id)
+const nick = id => playerById(id)?.nick ?? "?"
 const nickBySteam = sid => S.players.find(p=>p.steamId===sid)?.nick
 const ownerName = sid => nickBySteam(sid) || S.libraries.find(l=>l.steamId===sid)?.persona || "…"+sid.slice(-4)
 const canGet = (g, sid) => g.owners.includes(sid) || g.shareable
 const played = a => a.manualMinutes ?? Math.max(0, a.current - a.baseline)
+const pendingManual = a => a.manualMinutes !== undefined && a.manualOk === false
+const counted = a => a.status!=="active" && a.points!==undefined && a.finishedAt && !pendingManual(a)
+const monthOf = t => new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit"}).format(new Date(t))
+const badgeInfo = id => S.badgeList.find(b=>b.id===id)
+const badgeIcons = pid => (S.badges[pid]||[]).map(id=>{const b=badgeInfo(id); return `<span class="badge" title="${esc(b.name+" — "+b.desc)}">${b.icon}</span>`}).join("")
+const modById = id => S.mods.find(m=>m.id===id) || S.mods[0]
+const rerollsLeft = pid => S.rerollsAllowed - S.assignments.filter(a=>a.playerId===pid && a.status==="rerolled" && a.finishedAt && monthOf(a.finishedAt)===S.month).length
+const avatar = (p, size=46) => `<img class="av click" style="width:${size}px;height:${size}px;border-radius:8px" src="${esc(p.avatar)}" alt="" onclick="profile('${p.id}')">`
+
+// end of the current month in Warsaw time
+function warsawOffset(t){
+  const parts = new Intl.DateTimeFormat("en-US",{timeZone:"Europe/Warsaw",hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date(t))
+  const g = k => +parts.find(p=>p.type===k).value
+  return Date.UTC(g("year"),g("month")-1,g("day"),g("hour"),g("minute"),g("second")) - Math.floor(t/1000)*1000
+}
+function monthEnd(){ const [y,m]=S.month.split("-").map(Number); const u=Date.UTC(y,m,1); return u - warsawOffset(u) }
+function tick(){
+  if(!S) return
+  let left = Math.max(0, monthEnd() - Date.now())
+  const d=Math.floor(left/864e5); left-=d*864e5
+  const hh=Math.floor(left/36e5); left-=hh*36e5
+  const mm=Math.floor(left/6e4), ss=Math.floor((left-mm*6e4)/1000)
+  const p2 = n => String(n).padStart(2,"0")
+  $("#countdown").textContent = `${d} дн ${p2(hh)}:${p2(mm)}:${p2(ss)}`
+  $("#monthPill").textContent = `${monthName(S.month)} · ${d} дн.`
+  if(monthEnd() < Date.now()) refresh()
+}
 
 function render(){
   if(!S) return
-  const [y,m] = S.month.split("-")
-  const months=["січень","лютий","березень","квітень","травень","червень","липень","серпень","вересень","жовтень","листопад","грудень"]
-  const end = new Date(+y, +m, 1); const days = Math.ceil((end - Date.now())/864e5)
-  $("#monthPill").textContent = `${months[+m-1]} ${y} · до кінця ${days} дн.`
+  tick()
+  const mod = modById(S.mod)
+  $("#modPill").textContent = `${mod.icon} ${mod.name}`
   $("#syncPill").textContent = S.lastSync ? "Час оновлено " + new Date(S.lastSync).toLocaleTimeString("uk",{hour:"2-digit",minute:"2-digit"}) : "Час ще не оновлювався"
+  $("#modBar").innerHTML = S.monthMods[S.month]
+    ? `<b>${mod.icon} Модифікатор місяця: ${esc(mod.name)}</b><div class="mut">${esc(mod.desc)}</div>`
+    : `<div class="row" style="justify-content:space-between"><span><b>🎰 Модифікатор місяця ще не обрано</b><div class="mut">Зроль випадковий або обери на вкладці «Правила»</div></span><button class="btn" onclick="rollMod()">Зролити</button></div>`
 
   // me select
   const me = getMe()
   $("#me").innerHTML = S.players.length
-    ? `<option value="">— Хто ти? —</option>` + S.players.map(p=>`<option value="${p.id}" ${p.id===me?"selected":""}>${esc(p.nick)} (${esc(p.persona)})</option>`).join("")
+    ? `<option value="">— Хто ти? —</option>` + S.players.map(p=>`<option value="${p.id}" ${p.id===me?"selected":""}>${esc(p.nick)} (${esc(p.persona)})${p.hasPin?"":" · без PIN"}</option>`).join("")
     : `<option value="">Спочатку додай гравця →</option>`
   if(!S.players.length) $("#addForm").classList.remove("hide")
+  const mp = playerById(me)
+  $("#who").innerHTML = !mp ? "" : authed()
+    ? `🔓 Увійшов як <b>${esc(mp.nick)}</b> · <a href="#" onclick="profile('${mp.id}');return false">мій профіль</a> · <a href="#" onclick="logout();return false">вийти</a>`
+    : `🔒 ${mp.hasPin?"Введи свій PIN, щоб грати":"Постав собі PIN, щоб ніхто не грав за тебе"} · <a href="#" onclick="askPin();return false">${mp.hasPin?"увійти":"поставити PIN"}</a>`
   const active = S.assignments.find(a=>a.playerId===me && a.status==="active")
   $("#rollBtn").disabled = !me || !!active || rolling
-  $("#rollInfo").textContent = !me ? "" : active ? `У тебе вже є гра: ${active.name}. Пройди її або здайся, щоб ролити знову.` : (()=>{ const sid=playerById(me)?.steamId; const n=S.games.filter(g=>!g.excluded&&canGet(g,sid)).length; return `Тобі можуть випасти ${n} ігор (сімейні + твої власні, що не передаються)` })()
+  $("#rollInfo").textContent = !me ? "" : active ? `У тебе вже є гра: ${active.name}. Пройди її, здайся або зроби ре-рол.` : (()=>{ const sid=mp?.steamId; const n=S.games.filter(g=>!g.excluded&&canGet(g,sid)).length; return `Тобі можуть випасти ${n} ігор${mod.id!=="none"?" (модифікатор місяця ще звузить вибір)":""}` })()
 
   // board
   const sc = S.scores[S.month] || {}
-  const rows = S.players.map(p=>({p, pts: sc[p.id]||0, n: S.assignments.filter(a=>a.playerId===p.id && a.status==="done" && a.finishedAt && monthOf(a.finishedAt)===S.month).length}))
+  const rows = S.players.map(p=>({p, pts: sc[p.id]||0, n: S.assignments.filter(a=>a.playerId===p.id && a.status==="done" && counted(a) && monthOf(a.finishedAt)===S.month).length}))
     .sort((a,b)=>b.pts-a.pts)
   const minPts = rows.length>1 ? Math.min(...rows.map(r=>r.pts)) : null
-  $("#board").innerHTML = rows.map((r,i)=>`<tr class="${rows.length>1 && r.pts===minPts?"loser":""}"><td>${i+1}</td><td>${esc(r.p.nick)}${rows.length>1 && r.pts===minPts?" 🛒":""}</td><td>${r.n}</td><td style="text-align:right;font-weight:700">${r.pts}</td></tr>`).join("") || `<tr><td colspan=4 class="mut">Ще немає гравців</td></tr>`
-  const prev = Object.keys(S.scores).filter(k=>k<S.month).sort().pop()
-  if(prev){ const ps=S.scores[prev]; const lo=S.players.filter(p=>ps[p.id]!==undefined).sort((a,b)=>(ps[a.id]||0)-(ps[b.id]||0))[0]; $("#boardNote").textContent = lo?`Минулого місяця (${prev}) гру купує: ${lo.nick}`:"" }
-  else $("#boardNote").textContent = "🛒 — хто зараз останній і купуватиме гру"
+  $("#board").innerHTML = rows.map((r,i)=>`<tr class="${rows.length>1 && r.pts===minPts?"loser":""}"><td>${i===0&&rows.length>1&&r.pts>minPts?"👑":i+1}</td><td class="click" onclick="profile('${r.p.id}')"><b>${esc(r.p.nick)}</b>${rows.length>1 && r.pts===minPts?" 🛒":""}</td><td>${r.n}</td><td style="text-align:right;font-weight:700">${r.pts}</td></tr>`).join("") || `<tr><td colspan=4 class="mut">Ще немає гравців</td></tr>`
+  const prev = Object.keys(S.results).sort().pop()
+  $("#boardNote").textContent = prev ? `Минулого місяця (${monthName(prev)}) гру купує: ${S.results[prev].loser.map(nick).join(", ")}${S.notes[prev]?" — "+S.notes[prev]:""}` : "🛒 — хто зараз останній і купуватиме гру"
+
+  // pending confirmations
+  const pend = S.assignments.filter(pendingManual)
+  $("#pendCard").classList.toggle("hide", !pend.length)
+  $("#pending").innerHTML = pend.map(a=>`<div class="duel"><span><b>${esc(nick(a.playerId))}</b> · ${esc(a.name)} · вписав <b>${h(a.manualMinutes)} год</b>${a.tracked?` <span class="mut">(Steam бачить ${h(Math.max(0,a.current-a.baseline))} год)</span>`:""} <span class="mut">${a.status==="done"?"· пройдено, "+a.points+" балів чекають":"· гра ще активна"}</span></span>
+    ${a.playerId===me ? `<span class="pend">чекає на друга</span>` : `<span class="row"><button class="btn ok" onclick="confirmHours('${a.id}',true)">✓ Підтвердити</button><button class="btn no" onclick="confirmHours('${a.id}',false)">✗ Відхилити</button></span>`}</div>`).join("")
 
   // players
   $("#players").innerHTML = S.players.map(p=>{
     const a = S.assignments.find(x=>x.playerId===p.id && x.status==="active")
-    let game = `<div class="game mut">Немає активної гри — час ролити!</div>`
+    const mine = p.id===me
+    let game = `<div class="mut" style="grid-column:1/-1">Немає активної гри — час ролити!</div>`
     if(a){
       const g = S.games.find(x=>x.appid===a.appid) || {}
       const pm = played(a), pct = Math.min(100, pm/60 / a.expectedHours * 100)
+      const duel = a.duelId && S.duels.find(d=>d.id===a.duelId)
+      const rival = duel && nick(duel.from===p.id?duel.to:duel.from)
+      const left = rerollsLeft(p.id)
       game = `<div class="game"><img src="${img(a.appid)}" alt="" onerror="this.style.visibility='hidden'">
-        <div><b>${esc(a.name)}</b> <span class="stars" title="Складність ${a.difficulty}">${stars(g.stars||1)}</span>
-        <div class="mut">Награно <b style="color:var(--text)">${h(pm)} год</b> з ~${a.expectedHours} год · складність ${a.difficulty}${a.manualMinutes!==undefined?" · вручну":""}</div>
+        <div><b>${esc(a.name)}</b> <span class="stars" title="Складність ${a.difficulty}">${stars(g.stars||1)}</span>${a.mult?`<span class="chip">${a.mult}× ${esc(a.modLabel)}</span>`:""}${duel?`<span class="chip duelc">⚔ дуель з ${esc(rival)}${duel.winner?` · переміг ${esc(nick(duel.winner))}`:""}</span>`:""}
+        <div class="mut">Награно <b style="color:var(--text)">${h(pm)} год</b> з ~${a.expectedHours} год · складність ${a.difficulty}${a.manualMinutes!==undefined?(pendingManual(a)?' · <span class="pend">вручну, чекає підтвердження</span>':" · вручну ✓"):""}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
-        ${a.tracked ? "" : `<div class="warn">⚠ Steam поки не показує час у цій грі для ${esc(p.nick)}. Якщо так і лишиться — впиши години вручну.</div>`}
-        <div class="row" style="margin-top:6px">
+        ${a.tracked ? "" : `<div class="warn">⚠ Steam поки не показує час у цій грі для ${esc(p.nick)}. Якщо так і лишиться — впиши години вручну (друг підтвердить).</div>`}
+        ${mine ? `<div class="row" style="margin-top:6px">
           <button class="btn ok" onclick="finish('${a.id}',false)">✓ Пройшов</button>
-          <button class="btn no" onclick="finish('${a.id}',true)">Здатися</button>
+          <button class="btn no" onclick="finish('${a.id}',true)">Здатися (−${S.settings.giveUpPenalty})</button>
+          ${a.duelId?"":`<button class="btn" ${left>0?"":"disabled"} onclick="reroll()" title="Ре-ролів лишилось: ${left}">🎲 Ре-рол (−${S.settings.rerollPenalty}) · ${Math.max(0,left)}</button>`}
           <button class="btn" onclick="manual('${a.id}')">Години вручну</button>
           <a class="mut" href="steam://run/${a.appid}">▶ Запустити в Steam</a>
-        </div></div></div>`
+        </div>` : ""}</div></div>`
     }
-    return `<div class="pcard"><img class="av" src="${esc(p.avatar)}" alt=""><div><b>${esc(p.nick)}</b><div class="mut">${esc(p.persona)}</div></div>
+    return `<div class="pcard">${avatar(p)}<div class="click" onclick="profile('${p.id}')"><b>${esc(p.nick)}</b>${p.hasPin?"":' <span class="mut" title="Ще не поставив PIN">🔓</span>'}<div class="mut">${esc(p.persona)}</div><div class="badges">${badgeIcons(p.id)}</div></div>
       <div class="pts">${(S.scores[S.month]||{})[p.id]||0}<small>балів за місяць</small></div>${game}</div>`
   }).join("") || `<p class="mut">Додай гравців угорі: нік + посилання на профіль Steam.</p>`
 
-  // history
-  const hist = S.assignments.filter(a=>a.status!=="active").sort((a,b)=>b.finishedAt-a.finishedAt)
-  $("#history").innerHTML = hist.map(a=>`<tr><td class="mut">${new Date(a.finishedAt).toLocaleDateString("uk")}</td><td>${esc(playerById(a.playerId)?.nick)}</td><td>${esc(a.name)}</td><td>${h(played(a))} год</td>
-    <td title="${esc(a.breakdown)}">${a.status==="done"?`<b style="color:var(--acc2)">+${a.points}</b>`:`<span style="color:var(--bad)">${a.points}</span>`} <span class="mut">${a.status==="done"?"пройдено":"здався"}</span></td></tr>`).join("") || `<tr><td colspan=5 class="mut">Поки нічого не пройдено</td></tr>`
+  // duels
+  $("#duelBonusTxt").textContent = "+"+S.settings.duelBonus
+  $("#duelTo").innerHTML = `<option value="">— Кого викликати? —</option>` + S.players.filter(p=>p.id!==me).map(p=>`<option value="${p.id}">${esc(p.nick)}</option>`).join("")
+  $("#duelForm").classList.toggle("hide", !mp)
+  const ds = S.duels.filter(d=>d.status!=="declined").sort((a,b)=>b.createdAt-a.createdAt).slice(0,10)
+  $("#duels").innerHTML = ds.map(d=>{
+    let right = ""
+    if(d.status==="pending") right = d.to===me ? `<span class="row"><button class="btn ok" onclick="duelAccept('${d.id}')">⚔ Прийняти</button><button class="btn no" onclick="duelDecline('${d.id}')">Відмовитись</button></span>`
+      : d.from===me ? `<span class="row"><span class="pend">чекає відповіді</span><button class="btn" onclick="duelDecline('${d.id}')">Скасувати</button></span>` : `<span class="pend">чекає відповіді</span>`
+    else if(d.status==="active") right = `<span class="mut">триває</span>`
+    else right = d.winner ? `<span>🏆 <b>${esc(nick(d.winner))}</b> +${S.settings.duelBonus}</span>` : `<span class="mut">обидва здались</span>`
+    return `<div class="duel"><span><b>${esc(nick(d.from))}</b> ⚔ <b>${esc(nick(d.to))}</b>${d.name?` · ${esc(d.name)}`:""} <span class="mut">${new Date(d.createdAt).toLocaleDateString("uk")}</span></span>${right}</div>`
+  }).join("") || `<p class="mut">Дуелей ще не було</p>`
 
-  renderPool(); renderRules()
+  // history (games + bonuses)
+  const hist = [
+    ...S.assignments.filter(a=>a.status!=="active").map(a=>({t:a.finishedAt, html:`<td>${esc(nick(a.playerId))}</td><td>${esc(a.name)}</td><td>${h(played(a))} год</td>
+      <td title="${esc(a.breakdown)}">${a.status==="done"?`<b style="color:var(--acc2)">+${a.points}</b>`:`<span style="color:var(--bad)">${a.points}</span>`} <span class="mut">${({done:"пройдено",gaveup:"здався",rerolled:"ре-рол"})[a.status]}</span>${pendingManual(a)?' <span class="pend">· чекає підтвердження</span>':""}</td>`})),
+    ...S.bonuses.map(b=>({t:b.at, html:`<td>${esc(nick(b.playerId))}</td><td colspan=2>${esc(b.reason)}</td><td><b style="color:var(--gold)">+${b.points}</b> <span class="mut">бонус</span></td>`})),
+  ].sort((a,b)=>b.t-a.t)
+  $("#history").innerHTML = hist.map(x=>`<tr><td class="mut">${new Date(x.t).toLocaleDateString("uk")}</td>${x.html}</tr>`).join("") || `<tr><td colspan=5 class="mut">Поки нічого не пройдено</td></tr>`
+
+  renderArchive(); renderPool(); renderRules()
 }
-const monthOf = t => new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit"}).format(new Date(t))
+
+function stats(pid){
+  const mine = S.assignments.filter(a=>a.playerId===pid)
+  const done = mine.filter(a=>a.status==="done" && counted(a))
+  const total = Object.values(S.scores).reduce((t,m)=>t+(m[pid]||0),0)
+  return {
+    total, done: done.length, gaveup: mine.filter(a=>a.status==="gaveup").length, rerolls: mine.filter(a=>a.status==="rerolled").length,
+    hours: mine.reduce((t,a)=>t+played(a),0)/60, avgDiff: done.length ? done.reduce((t,a)=>t+a.difficulty,0)/done.length : 0,
+    champ: Object.values(S.results).filter(r=>r.champ.includes(pid)).length, loser: Object.values(S.results).filter(r=>r.loser.includes(pid)).length,
+    duels: S.duels.filter(d=>d.winner===pid).length, best: done.reduce((b,a)=>!b||a.points>b.points?a:b,null),
+  }
+}
+
+function renderArchive(){
+  const rows = S.players.map(p=>({p, st: stats(p.id)})).sort((a,b)=>b.st.total-a.st.total)
+  $("#allTime").innerHTML = rows.map((r,i)=>`<tr><td>${i+1}</td><td class="click" onclick="profile('${r.p.id}')"><b>${esc(r.p.nick)}</b></td><td>${r.st.done}</td><td>${r.st.gaveup}</td><td>${r.st.champ}</td><td>${r.st.loser}</td><td>${badgeIcons(r.p.id)}</td><td style="text-align:right;font-weight:700">${r.st.total}</td></tr>`).join("") || `<tr><td colspan=8 class="mut">Ще немає гравців</td></tr>`
+  const months = [...new Set([...Object.keys(S.scores), S.month])].sort().reverse()
+  $("#months").innerHTML = months.map(m=>{
+    const sc = S.scores[m]||{}, res = S.results[m], cur = m===S.month
+    const ps = S.players.filter(p=>monthOf(p.joinedAt)<=m).map(p=>({p,pts:sc[p.id]||0})).sort((a,b)=>b.pts-a.pts)
+    const games = S.assignments.filter(a=>a.status==="done" && counted(a) && monthOf(a.finishedAt)===m)
+    const mod = S.monthMods[m] ? modById(S.monthMods[m]) : null
+    return `<div class="card month"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${monthName(m)}${cur?" · триває":""}</h2>${mod?`<span class="chip">${mod.icon} ${esc(mod.name)}</span>`:""}</div>
+      <table style="margin-top:8px"><tbody>${ps.map((r,i)=>`<tr><td style="width:36px">${res?.champ.includes(r.p.id)?"👑":res?.loser.includes(r.p.id)?"🛒":i+1}</td><td>${esc(r.p.nick)}</td><td style="text-align:right;font-weight:700">${r.pts}</td></tr>`).join("")}</tbody></table>
+      <p class="mut" style="margin:8px 0 4px">Пройдено ігор: ${games.length}${games.length?" — "+games.map(a=>`${esc(a.name)} (${esc(nick(a.playerId))})`).join(", "):""}</p>
+      ${res?`<div class="row"><span>🛒 <b>${res.loser.map(n=>esc(nick(n))).join(", ")}</b> купує:</span><input value="${esc(S.notes[m]||"")}" placeholder="яку гру купив…" style="flex:1;min-width:160px" onchange="saveNote('${m}',this.value)"></div>`:""}
+    </div>`
+  }).join("")
+}
+
+function profile(pid){
+  const p = playerById(pid); if(!p) return
+  const st = stats(pid), me = getMe(), have = S.badges[pid]||[]
+  const recent = S.assignments.filter(a=>a.playerId===pid).sort((a,b)=>(b.finishedAt||b.rolledAt)-(a.finishedAt||a.rolledAt)).slice(0,8)
+  openModal(`<div class="row">${avatar(p,64)}<div><h2 style="margin:0;color:var(--text);font-size:20px;text-transform:none;letter-spacing:0">${esc(p.nick)}</h2>
+      <div class="mut">${esc(p.persona)} · <a href="https://steamcommunity.com/profiles/${p.steamId}" target="_blank">профіль Steam</a> · з ${new Date(p.joinedAt).toLocaleDateString("uk")}</div></div></div>
+    <div class="stats">
+      <div><b>${(S.scores[S.month]||{})[pid]||0}</b><span class="mut">балів цього місяця</span></div>
+      <div><b>${st.total}</b><span class="mut">балів за весь час</span></div>
+      <div><b>${st.done}</b><span class="mut">пройдено</span></div>
+      <div><b>${st.gaveup}</b><span class="mut">здався</span></div>
+      <div><b>${st.hours.toFixed(1)}</b><span class="mut">годин у челенджі</span></div>
+      <div><b>${st.avgDiff?st.avgDiff.toFixed(1):"—"}</b><span class="mut">сер. складність</span></div>
+      <div><b>${st.champ} / ${st.loser}</b><span class="mut">👑 перемог / 🛒 покупок</span></div>
+      <div><b>${st.duels}</b><span class="mut">виграних дуелей</span></div>
+    </div>
+    ${st.best?`<p class="mut">Найкраща гра: <b style="color:var(--text)">${esc(st.best.name)}</b> — ${st.best.points} балів</p>`:""}
+    <h2>Бейджі · ${have.length}/${S.badgeList.length}</h2>
+    <div class="bgrid">${S.badgeList.map(b=>`<div class="${have.includes(b.id)?"":"off"}"><b>${b.icon} ${esc(b.name)}</b>${esc(b.desc)}</div>`).join("")}</div>
+    <h2 style="margin-top:16px">Останні ігри</h2>
+    ${recent.map(a=>`<div class="duel"><span>${esc(a.name)} <span class="mut">${h(played(a))} год</span></span><span>${a.status==="active"?'<span class="mut">грає зараз</span>':`${a.points>0?`<b style="color:var(--acc2)">+${a.points}</b>`:`<span style="color:var(--bad)">${a.points}</span>`}`}</span></div>`).join("") || '<p class="mut">Ще нічого</p>'}
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      ${pid===me && authed() ? `<button class="btn" onclick="changePin()">Змінити PIN</button><button class="btn" onclick="logout();closeModal()">Вийти</button>`
+        : pid!==me && me ? `<button class="btn" onclick="closeModal();challenge('${pid}')">⚔ Викликати на дуель</button>${p.hasPin?`<button class="btn no" onclick="resetPin('${pid}')">Скинути PIN</button>`:""}` : ""}
+    </div>`)
+}
 
 function renderPool(){
   const q = $("#q").value.trim().toLowerCase(), f = $("#poolFilter").value, so = $("#poolSort").value
@@ -280,82 +512,117 @@ function renderPool(){
 
 function renderRules(){
   const s = S.settings
-  $("#formula").textContent = `бали = (${s.basePerDifficulty} × складність + ${s.lengthMultiplier} × √очікувані_год) × швидкість\nшвидкість = очікувані_год ÷ твої_год, від ${s.speedMin} до ${s.speedMax}\nздатися = −${s.giveUpPenalty}`
-  $("#formula").style.whiteSpace="pre-wrap"
-  const labels = {basePerDifficulty:"Бали за одиницю складності",lengthMultiplier:"Множник за тривалість",speedMin:"Мінімальний множник швидкості",speedMax:"Максимальний множник швидкості",giveUpPenalty:"Штраф за «здатися»"}
+  $("#formula").textContent = `бали = (${s.basePerDifficulty} × складність + ${s.lengthMultiplier} × √очікувані_год) × швидкість × модифікатор\nшвидкість = очікувані_год ÷ твої_год, від ${s.speedMin} до ${s.speedMax}\nздатися = −${s.giveUpPenalty}   ре-рол = −${s.rerollPenalty} (${S.rerollsAllowed} на місяць)\nперемога в дуелі = +${s.duelBonus}`
+  const labels = {basePerDifficulty:"Бали за одиницю складності",lengthMultiplier:"Множник за тривалість",speedMin:"Мінімальний множник швидкості",speedMax:"Максимальний множник швидкості",giveUpPenalty:"Штраф за «здатися»",rerollPenalty:"Штраф за ре-рол",rerollsPerMonth:"Ре-ролів на місяць",duelBonus:"Бонус за перемогу в дуелі"}
   if(!$("#settings").dataset.done){
     $("#settings").innerHTML = Object.entries(labels).map(([k,l])=>`<label class="row" style="justify-content:space-between"><span>${l}</span><input class="mini" style="width:90px" type="number" step="0.1" data-k="${k}" value="${s[k]}"></label>`).join("")
     $("#settings").dataset.done = 1
   }
+  const cur = S.monthMods[S.month]
+  $("#modGrid").innerHTML = S.mods.map(m=>`<button class="btn ${cur===m.id?"on":""}" onclick="setMod('${m.id}')"><b>${m.icon} ${esc(m.name)}</b><div class="mut">${esc(m.desc)}</div></button>`).join("")
+    + `<button class="btn" onclick="rollMod()" ${cur?"disabled":""}><b>🎰 Випадковий</b><div class="mut">${cur?"вже обрано":"зролити модифікатор"}</div></button>`
   $("#libAdmin").innerHTML = S.libraries.map(l=>`<div class="row" style="padding:4px 0"><span>${esc(l.persona)} <span class="mut">${l.steamId} · не грає</span></span></div>`).join("") || `<p class="mut">Немає</p>`
-  $("#playerAdmin").innerHTML = S.players.map(p=>`<div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(p.nick)} <span class="mut">${p.steamId}</span></span><button class="btn no" onclick="removePlayer('${p.id}')">Видалити</button></div>`).join("") || `<p class="mut">Немає</p>`
+  $("#playerAdmin").innerHTML = S.players.map(p=>`<div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(p.nick)} <span class="mut">${p.steamId}${p.hasPin?" · 🔒 PIN":" · без PIN"}</span></span><button class="btn no" onclick="removePlayer('${p.id}')">Видалити</button></div>`).join("") || `<p class="mut">Немає</p>`
 }
 
 // ---- actions ----
 async function refresh(){ try{ S = await api("state"); render() }catch(e){ toast("Помилка: "+e.message) } }
-$("#me").onchange = e => { setMe(e.target.value); render() }
+$("#me").onchange = e => { setMe(e.target.value); render(); if(e.target.value && !authed()) askPin() }
 $("#addToggle").onclick = () => $("#addForm").classList.toggle("hide")
 $("#joinBtn").onclick = async () => {
-  const b=$("#joinBtn"); b.disabled=true; b.textContent="Перевіряю Steam…"
+  const b=$("#joinBtn"), pin=$("#joinPin").value.trim()
+  if(!/^\d{4,6}$/.test(pin)) return toast("Придумай PIN — 4–6 цифр")
+  b.disabled=true; b.textContent="Перевіряю Steam…"
   try{
-    const r = await api("join",{nick:$("#nick").value, steam:$("#steam").value})
-    S = r.state; setMe(r.player.id); $("#nick").value=$("#steam").value=""; $("#addForm").classList.add("hide")
+    const r = await api("join",{nick:$("#nick").value, steam:$("#steam").value, pin})
+    S = r.state; setMe(r.player.id); ls.set("pin:"+r.player.id, pin); $("#nick").value=$("#steam").value=$("#joinPin").value=""; $("#addForm").classList.add("hide")
     toast(`${r.player.nick} доданий! Його ігор у Steam: ${r.gamesAdded}`); render()
   }catch(e){ toast(e.message) } finally{ b.disabled=false; b.textContent="Додати" }
 }
-$("#rollBtn").onclick = async () => {
+function logout(){ ls.set("pin:"+getMe(), null); render(); toast("Вийшов") }
+async function changePin(){
+  const v = prompt("Новий PIN (4–6 цифр):"); if(!v) return
+  if(!/^\d{4,6}$/.test(v.trim())) return toast("PIN — це 4–6 цифр")
+  try{ await act("change-pin",{newPin:v.trim()}); ls.set("pin:"+getMe(), v.trim()); toast("PIN змінено") }catch(e){ toast(e.message) }
+}
+async function resetPin(pid){
+  if(!confirm(`Скинути PIN гравця ${nick(pid)}? Він зможе поставити новий при наступному вході.`)) return
+  try{ const r = await act("reset-pin",{byId:getMe(), byPin:myPin(), playerId:pid}); S=r.state; closeModal(); render(); toast("PIN скинуто") }catch(e){ toast(e.message) }
+}
+
+/** spin the roulette while the server picks the game */
+async function spin(action, body={}){
   const me = getMe(); if(!me) return
+  if(!authed()){ await askPin(); if(!authed()) return }
   rolling = true; render()
   const strip = $("#strip"); $("#roller .empty")?.remove()
-  // spin with placeholder tiles while the server picks
   const sid = playerById(me)?.steamId
   const pool = S.games.filter(g=>!g.excluded && canGet(g,sid))
   const rnd = () => pool[Math.floor(Math.random()*pool.length)]
   let res
-  try{ res = await api("roll",{playerId:me}) }catch(e){ rolling=false; render(); return toast(e.message) }
+  try{ res = await act(action, body) }catch(e){ rolling=false; render(); return toast(e.message) }
   const tiles = Array.from({length:44}, rnd); tiles[40] = {appid:res.assignment.appid, name:res.assignment.name}
   strip.style.transition="none"; strip.style.transform="translateX(0)"
   strip.innerHTML = tiles.map(t=>`<div class="tile" style="background-image:url('${img(t.appid)}')"><b>${esc(t.name)}</b></div>`).join("")
   const W = 310, center = $("#roller").clientWidth/2
   const target = 10 + 40*W + 150 - center + (Math.random()*160-80)
+  scrollTo({top:$("#roller").getBoundingClientRect().top+scrollY-80, behavior:"smooth"})
   requestAnimationFrame(()=>{ strip.style.transition="transform 5.5s cubic-bezier(.12,.75,.15,1)"; strip.style.transform=`translateX(${-target}px)` })
   setTimeout(()=>{
     rolling=false; S=res.state; render()
     strip.children[40].classList.add("win"); strip.children[40].style.outline="3px solid var(--gold)"
     const a=res.assignment
-    $("#rollInfo").innerHTML = `🎉 <b>${esc(playerById(me).nick)}</b>, тобі випала <b>${esc(a.name)}</b> · складність ${a.difficulty} · ~${a.expectedHours} год`
+    $("#rollInfo").innerHTML = `🎉 <b>${esc(playerById(me).nick)}</b>, тобі випала <b>${esc(a.name)}</b> · складність ${a.difficulty} · ~${a.expectedHours} год${a.mult?` · ×${a.mult}`:""}${a.duelId?" · ⚔ дуель!":""}`
   },5700)
+}
+$("#rollBtn").onclick = () => spin("roll")
+function reroll(){
+  const left = rerollsLeft(getMe())
+  if(!confirm(`Ре-рол: поточна гра замінюється іншою, штраф −${S.settings.rerollPenalty}. Лишиться ре-ролів: ${left-1}. Продовжити?`)) return
+  spin("reroll")
 }
 $("#syncBtn").onclick = async () => { const b=$("#syncBtn"); b.disabled=true; try{ S=await api("sync",{}); render(); toast("Час оновлено зі Steam") }catch(e){toast(e.message)} b.disabled=false }
 async function finish(id, giveUp){
   const a = S.assignments.find(x=>x.id===id)
   if(!confirm(giveUp?`Здатися в «${a.name}»? Буде штраф −${S.settings.giveUpPenalty}.`:`Підтвердити проходження «${a.name}»?`)) return
-  try{ S = await api("finish",{id,giveUp}); render(); toast(giveUp?"Здався. Можна ролити нову гру.":"Вітаю! Бали нараховано 🎉") }
+  try{ S = (await act("finish",{id,giveUp})); render(); toast(giveUp?"Здався. Можна ролити нову гру.":"Вітаю! Бали нараховано 🎉") }
   catch(e){
-    if(!giveUp && /вручну/.test(e.message)){ const v=prompt("Steam не бачить час у цій грі. Скільки годин ти грав?"); if(v){ try{S=await api("finish",{id,manualHours:+v.replace(",",".")});render();toast("Бали нараховано 🎉")}catch(e2){toast(e2.message)} } }
+    if(!giveUp && /вручну/.test(e.message)){ const v=prompt("Steam не бачить час у цій грі. Скільки годин ти грав? (друг має підтвердити)"); if(v){ await run("finish",{id,manualHours:+v.replace(",",".")},"Готово! Бали зарахуються після підтвердження другом") } }
     else toast(e.message)
   }
 }
 async function manual(id){
-  const v = prompt("Скільки годин награно в цій грі? (порожньо — повернути автоматичний підрахунок)")
+  const v = prompt("Скільки годин награно в цій грі? Друг має підтвердити. (порожньо — повернути автоматичний підрахунок)")
   if(v===null) return
-  try{ S = await api("manual",{id,hours:v.trim()===""?null:+v.replace(",",".")}); render() }catch(e){ toast(e.message) }
+  run("manual",{id,hours:v.trim()===""?null:+v.replace(",",".")}, v.trim()===""?"Повернуто час зі Steam":"Години надіслано на підтвердження")
 }
-async function editGame(appid, patch){ try{ S = await api("game",{appid,...patch}); render() }catch(e){ toast(e.message) } }
-async function removePlayer(id){ if(!confirm("Видалити гравця і всю його історію?")) return; try{ S=await api("remove-player",{playerId:id}); render() }catch(e){toast(e.message)} }
-$("#libAdd").onclick = async () => { const b=$("#libAdd"); b.disabled=true; try{ const r=await api("add-library",{steam:$("#libSteam").value}); S=r.state; $("#libSteam").value=""; render(); toast(`Додано ігор: ${r.gamesAdded}`) }catch(e){toast(e.message)} b.disabled=false }
+function confirmHours(id, ok){
+  const a = S.assignments.find(x=>x.id===id)
+  if(!confirm(ok?`Підтвердити ${h(a.manualMinutes)} год у «${a.name}» для ${nick(a.playerId)}?`:`Відхилити години ${nick(a.playerId)} у «${a.name}»?${a.status==="done"?" Гра знову стане активною.":""}`)) return
+  run("confirm",{id,ok}, ok?"Підтверджено ✓":"Відхилено")
+}
+function challenge(pid){ if(confirm(`Викликати ${nick(pid)} на дуель? Вам обом випаде одна гра, коли він прийме виклик.`)) run("duel-challenge",{to:pid},"Виклик надіслано ⚔") }
+$("#duelBtn").onclick = () => { const to=$("#duelTo").value; if(!to) return toast("Обери суперника"); challenge(to) }
+function duelAccept(id){ if(confirm("Прийняти дуель? Вам обом зараз випаде одна гра.")) spin("duel-accept",{duelId:id}) }
+function duelDecline(id){ run("duel-decline",{duelId:id}) }
+function rollMod(){ if(confirm("Зролити випадковий модифікатор на цей місяць?")) run("mod",{mod:"random"},"Модифікатор обрано 🎰") }
+function setMod(id){ if(confirm(`Поставити модифікатор «${modById(id).name}» на цей місяць?`)) run("mod",{mod:id},"Збережено") }
+function saveNote(m, text){ run("note",{month:m,text},"Збережено") }
+async function editGame(appid, patch){ run("game",{appid,...patch}) }
+async function removePlayer(id){ if(!confirm(`Видалити гравця ${nick(id)} і всю його історію?`)) return; run("remove-player",{target:id}) }
+$("#libAdd").onclick = async () => { const b=$("#libAdd"); b.disabled=true; const r=await run("add-library",{steam:$("#libSteam").value}); if(r){ $("#libSteam").value=""; toast(`Додано ігор: ${r.gamesAdded}`) } b.disabled=false }
 $("#libRefresh").onclick = async () => { const b=$("#libRefresh"); b.disabled=true; b.textContent="Оновлюю…"; try{ S=await api("refresh-libraries",{}); render(); toast("Бібліотеки оновлено, нові ігри перевіряються у фоні") }catch(e){toast(e.message)} b.disabled=false; b.textContent="⟳ Оновити всі бібліотеки зараз" }
 $("#saveSettings").onclick = async () => {
-  const body = {}; document.querySelectorAll("#settings input").forEach(i=>body[i.dataset.k]=+i.value)
-  try{ S = await api("settings",body); render(); toast("Збережено") }catch(e){toast(e.message)}
+  const values = {}; document.querySelectorAll("#settings input").forEach(i=>values[i.dataset.k]=+i.value)
+  run("settings",{values},"Збережено")
 }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b))
-  ;["main","pool","rules"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab))
+  ;["main","archive","pool","rules"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab))
 })
 $("#q").oninput = $("#poolFilter").onchange = $("#poolSort").onchange = () => { poolLimit=60; renderPool() }
 $("#more").onclick = () => { poolLimit+=60; renderPool() }
-refresh(); setInterval(()=>{ if(!rolling) refresh() }, 60000)
+refresh(); setInterval(()=>{ if(!rolling && $("#modal").classList.contains("hide")) refresh() }, 60000); setInterval(tick, 1000)
 </script>
 </body>
 </html>
