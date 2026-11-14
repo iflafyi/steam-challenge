@@ -14,6 +14,7 @@ export type Game = Meta & {
   appid: number; owners: string[]; excluded: boolean
   difficulty: number; stars: number; expectedHours: number; expectedOverride?: number; difficultyOverride?: number
   excludeReason?: string | null; excludedManual?: boolean
+  shareable: boolean  // can be borrowed via Steam Family; false → only owners can get it
 }
 export type Player = { id: string; nick: string; steamId: string; persona: string; avatar: string; joinedAt: number }
 export type Assignment = {
@@ -33,10 +34,19 @@ export type Settings = {
   speedMin: number; speedMax: number
   giveUpPenalty: number
 }
+export type Library = { steamId: string; persona: string; addedAt: number }
 export type State = {
+  libraries?: Library[]   // family members who share games but do not play the challenge
+  lastLibraryRefresh?: number
   players: Player[]; assignments: Assignment[]
   games: Record<string, Game>; settings: Settings; lastSync?: number
 }
+
+// libraries the starting pool was built from (until these people join as players)
+const SEED_LIBRARIES: Library[] = [
+  { steamId: "76561198429562745", persona: "Вуйчіч", addedAt: 0 },
+  { steamId: "76561198983634521", persona: "Jackpot", addedAt: 0 },
+]
 
 export const DEFAULT_SETTINGS: Settings = {
   basePerDifficulty: 10, lengthMultiplier: 2, speedMin: 0.7, speedMax: 1.5, giveUpPenalty: 5,
@@ -101,6 +111,7 @@ export function computeGame(appid: number, m: Meta, owners: string[], prev?: Gam
   return {
     ...m, appid, owners,
     excludeReason: reason, excludedManual: prev?.excludedManual,
+    shareable: !m.cats?.length || m.cats.includes("Family Sharing"),
     excluded: prev?.excludedManual ?? !!reason,
     difficulty, stars, expectedHours,
     expectedOverride: prev?.expectedOverride, difficultyOverride: prev?.difficultyOverride,
@@ -189,6 +200,7 @@ export async function load(): Promise<State> {
   const s = (await store().get("state", { type: "json" })) as State | null
   if (s) {
     s.settings = { ...DEFAULT_SETTINGS, ...s.settings }
+    s.libraries ??= SEED_LIBRARIES.filter(l => !s.players.some(p => p.steamId === l.steamId))
     // re-apply current rules on every load (keeps manual choices); merge bundled store data if missing
     const seed = seedMeta as Record<string, Meta>
     for (const [id, g] of Object.entries(s.games)) {
@@ -204,7 +216,7 @@ export async function load(): Promise<State> {
   for (const [id, m] of Object.entries(seedMeta as Record<string, Meta & { owners?: string[] }>)) {
     games[id] = computeGame(Number(id), m, m.owners ?? [])
   }
-  return { players: [], assignments: [], games, settings: DEFAULT_SETTINGS }
+  return { players: [], libraries: [...SEED_LIBRARIES], assignments: [], games, settings: DEFAULT_SETTINGS }
 }
 export async function save(s: State) { await store().setJSON("state", s) }
 
@@ -224,4 +236,25 @@ export async function syncActive(s: State) {
     } catch { /* keep previous value */ }
   }))
   s.lastSync = Date.now()
+}
+
+/** Can this player get this game? Own it, or it is shareable through the family. */
+export const eligible = (g: Game, steamId: string) => g.owners.includes(steamId) || g.shareable
+
+export async function addOwnedToPool(s: State, steamId: string) {
+  const owned = await ownedGames(steamId)
+  for (const o of owned) {
+    const k = String(o.appid)
+    const g = s.games[k]
+    if (g) { if (!g.owners.includes(steamId)) g.owners.push(steamId) }
+    else s.games[k] = { ...computeGame(o.appid, { name: o.name, tags: [], median: 0, average: 0, pos: 0, neg: 0, ach: [] }, [steamId]), needsMeta: true } as Game
+  }
+  return owned.length
+}
+
+/** Pick up newly bought games for everyone (players + non-playing family libraries) */
+export async function refreshLibraries(s: State) {
+  const ids = new Set([...s.players.map(p => p.steamId), ...(s.libraries ?? []).map(l => l.steamId)])
+  for (const id of ids) { try { await addOwnedToPool(s, id) } catch { /* private or Steam down */ } }
+  s.lastLibraryRefresh = Date.now()
 }

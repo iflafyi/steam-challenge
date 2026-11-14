@@ -1,7 +1,7 @@
 import type { Config, Context } from "@netlify/functions"
 import {
   load, save, syncActive, computeGame, scoreFor, expected, monthKey,
-  resolveSteamId, summary, ownedGames, playtime, fetchMeta,
+  resolveSteamId, summary, playtime, fetchMeta, eligible, addOwnedToPool, refreshLibraries,
   type State, type Assignment, type Game,
 } from "../lib/core.mts"
 
@@ -20,20 +20,9 @@ function publicState(s: State) {
   const games = Object.values(s.games).map(g => ({
     appid: g.appid, name: g.name, owners: g.owners, excluded: g.excluded,
     difficulty: g.difficulty, stars: g.stars, expectedHours: expected(g),
-    tags: g.tags.slice(0, 6), reason: g.excludeReason ?? null, manual: g.excludedManual !== undefined,
+    tags: g.tags.slice(0, 6), shareable: g.shareable, reason: g.excludeReason ?? null, manual: g.excludedManual !== undefined,
   })).sort((a, b) => a.name.localeCompare(b.name))
-  return { players: s.players, assignments: s.assignments, games, settings: s.settings, scores, month, lastSync: s.lastSync }
-}
-
-async function addOwnedToPool(s: State, steamId: string) {
-  const owned = await ownedGames(steamId)
-  for (const o of owned) {
-    const k = String(o.appid)
-    const g = s.games[k]
-    if (g) { if (!g.owners.includes(steamId)) g.owners.push(steamId) }
-    else s.games[k] = { ...computeGame(o.appid, { name: o.name, tags: [], median: 0, average: 0, pos: 0, neg: 0, ach: [] }, [steamId]), needsMeta: true } as Game & { needsMeta?: boolean }
-  }
-  return owned.length
+  return { libraries: s.libraries ?? [], players: s.players, assignments: s.assignments, games, settings: s.settings, scores, month, lastSync: s.lastSync }
 }
 
 export default async (req: Request, context: Context) => {
@@ -55,6 +44,7 @@ export default async (req: Request, context: Context) => {
         let p = s.players.find(x => x.steamId === steamId)
         if (p) { p.nick = nick; p.persona = sum.persona; p.avatar = sum.avatar }
         else { p = { id: uid(), nick, steamId, persona: sum.persona, avatar: sum.avatar, joinedAt: Date.now() }; s.players.push(p) }
+        s.libraries = (s.libraries ?? []).filter(l => l.steamId !== steamId)  // now a player
         const count = await addOwnedToPool(s, steamId)
         await save(s)
         // classify the newly added games in the background
@@ -70,7 +60,7 @@ export default async (req: Request, context: Context) => {
           return err("У тебе вже є активна гра — пройди її або здайся")
         const busy = new Set(s.assignments.filter(a => a.status === "active").map(a => a.appid))
         const done = new Set(s.assignments.filter(a => a.playerId === p.id).map(a => a.appid))
-        const pool = Object.values(s.games).filter(g => !g.excluded && !busy.has(g.appid) && !done.has(g.appid))
+        const pool = Object.values(s.games).filter(g => !g.excluded && eligible(g, p.steamId) && !busy.has(g.appid) && !done.has(g.appid))
         if (!pool.length) return err("Пул ігор порожній")
         let g: (Game & { needsMeta?: boolean }) | null = null
         for (let tries = 0; tries < 6 && pool.length; tries++) {
@@ -149,6 +139,28 @@ export default async (req: Request, context: Context) => {
         for (const k of Object.keys(s.settings) as (keyof State["settings"])[])
           if (body[k] !== undefined && !isNaN(Number(body[k]))) s.settings[k] = Number(body[k])
         await save(s)
+        return Response.json(publicState(s))
+      }
+
+      case "add-library": {
+        const steamId = await resolveSteamId(String(body.steam ?? ""))
+        const sum = await summary(steamId)
+        if (!sum.public) return err("Профіль Steam закритий")
+        s.libraries ??= []
+        if (!s.libraries.some(l => l.steamId === steamId) && !s.players.some(p => p.steamId === steamId))
+          s.libraries.push({ steamId, persona: sum.persona, addedAt: Date.now() })
+        const count = await addOwnedToPool(s, steamId)
+        await save(s)
+        if (Object.values(s.games).some((g: any) => g.needsMeta))
+          context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
+        return Response.json({ gamesAdded: count, state: publicState(s) })
+      }
+
+      case "refresh-libraries": {
+        await refreshLibraries(s)
+        await save(s)
+        if (Object.values(s.games).some((g: any) => g.needsMeta))
+          context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
         return Response.json(publicState(s))
       }
 
