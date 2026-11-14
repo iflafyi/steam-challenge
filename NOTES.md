@@ -11,3 +11,4 @@
 - Сімейний доступ: `shareable` = категорія Steam Store «Family Sharing». Ігри без неї (Ubisoft/EA/Rockstar — AC, Far Cry, GTA, RDR2…) випадають тільки власнику (`eligible()` у core.mts).
 - Пул = ігри всіх гравців + `libraries` (члени сім'ї, що не грають; додаються на вкладці «Правила»). Бібліотеки оновлюються раз на добу в sync-cron і кнопкою.
 - Зареєстровані: glekatrop = Вуйчіч (адмін), Bo Sinn = Jackpot (Костя). Гоша/Маркіян — ще ні.
+- Сайт перенесено на GitHub Pages (`docs/`, гілка main). API залишився на Netlify; CORS дозволено для https://iflafyi.github.io (ALLOWED в api.mts). Деплой API: Netlify MCP deploy-site з папки репозиторію.

@@ -5,7 +5,15 @@ import {
   type State, type Assignment, type Game,
 } from "../lib/core.mts"
 
-const err = (msg: string, status = 400) => Response.json({ error: msg }, { status })
+// the page is served from GitHub Pages, so the API must allow that origin
+const ALLOWED = ["https://iflafyi.github.io"]
+let corsOrigin = ""
+const cors = () => (corsOrigin ? {
+  "Access-Control-Allow-Origin": corsOrigin, "Vary": "Origin",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "content-type",
+} : {}) as Record<string, string>
+const json = (data: unknown, status = 200) => Response.json(data, { status, headers: cors() })
+const err = (msg: string, status = 400) => json({ error: msg }, status)
 const uid = () => Math.random().toString(36).slice(2, 10)
 
 function publicState(s: State) {
@@ -26,6 +34,9 @@ function publicState(s: State) {
 }
 
 export default async (req: Request, context: Context) => {
+  const origin = req.headers.get("origin") ?? ""
+  corsOrigin = ALLOWED.includes(origin) ? origin : ""
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() })
   const action = context.params["0"] ?? new URL(req.url).pathname.split("/").pop()
   const body: any = req.method === "POST" ? await req.json().catch(() => ({})) : {}
   const s = await load()
@@ -33,7 +44,7 @@ export default async (req: Request, context: Context) => {
   try {
     switch (action) {
       case "state":
-        return Response.json(publicState(s))
+        return json(publicState(s))
 
       case "join": {
         const nick = String(body.nick ?? "").trim().slice(0, 24)
@@ -50,7 +61,7 @@ export default async (req: Request, context: Context) => {
         // classify the newly added games in the background
         if (Object.values(s.games).some((g: any) => g.needsMeta))
           context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
-        return Response.json({ player: p, gamesAdded: count, state: publicState(s) })
+        return json({ player: p, gamesAdded: count, state: publicState(s) })
       }
 
       case "roll": {
@@ -82,13 +93,13 @@ export default async (req: Request, context: Context) => {
         }
         s.assignments.push(a)
         await save(s)
-        return Response.json({ assignment: a, candidates: pool.slice(0, 40).map(x => ({ appid: x.appid, name: x.name })), state: publicState(s) })
+        return json({ assignment: a, candidates: pool.slice(0, 40).map(x => ({ appid: x.appid, name: x.name })), state: publicState(s) })
       }
 
       case "sync": {
         await syncActive(s)
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "finish": {
@@ -110,7 +121,7 @@ export default async (req: Request, context: Context) => {
         }
         a.finishedAt = Date.now()
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "manual": {
@@ -119,7 +130,7 @@ export default async (req: Request, context: Context) => {
         a.manualMinutes = body.hours === null || body.hours === "" ? undefined : Math.round(Number(body.hours) * 60)
         if (a.status === "done") Object.assign(a, scoreFor(a, s.settings))
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "game": {
@@ -132,14 +143,14 @@ export default async (req: Request, context: Context) => {
           s.games[String(g.appid)] = computeGame(g.appid, g, g.owners, g)
         }
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "settings": {
         for (const k of Object.keys(s.settings) as (keyof State["settings"])[])
           if (body[k] !== undefined && !isNaN(Number(body[k]))) s.settings[k] = Number(body[k])
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "add-library": {
@@ -153,7 +164,7 @@ export default async (req: Request, context: Context) => {
         await save(s)
         if (Object.values(s.games).some((g: any) => g.needsMeta))
           context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
-        return Response.json({ gamesAdded: count, state: publicState(s) })
+        return json({ gamesAdded: count, state: publicState(s) })
       }
 
       case "refresh-libraries": {
@@ -161,14 +172,14 @@ export default async (req: Request, context: Context) => {
         await save(s)
         if (Object.values(s.games).some((g: any) => g.needsMeta))
           context.waitUntil(fetch(new URL("/api-enrich", req.url), { method: "POST" }).catch(() => {}))
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       case "remove-player": {
         s.players = s.players.filter(p => p.id !== body.playerId)
         s.assignments = s.assignments.filter(a => a.playerId !== body.playerId)
         await save(s)
-        return Response.json(publicState(s))
+        return json(publicState(s))
       }
 
       default:
