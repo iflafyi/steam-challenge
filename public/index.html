@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Steam Челендж</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+<style>
+:root{--bg:#0f1218;--panel:#171c25;--panel2:#1e2531;--line:#2a3342;--text:#e6ebf2;--mut:#8b97a8;--acc:#66c0f4;--acc2:#a4d007;--bad:#e5534b;--gold:#f5c542}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#1b2a3d 0,transparent 60%),var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+a{color:var(--acc)}
+.wrap{max-width:1150px;margin:0 auto;padding:18px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+header h1{font-size:24px;margin:0;letter-spacing:.5px}
+header h1 span{color:var(--acc)}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--mut);font-size:13px}
+.tabs{display:flex;gap:6px;margin-left:auto}
+.tabs button{background:none;border:1px solid transparent;color:var(--mut);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:14px}
+.tabs button.on{background:var(--panel2);border-color:var(--line);color:var(--text)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);margin:0 0 12px}
+input,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font-size:14px;outline:none}
+input:focus,select:focus{border-color:var(--acc)}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 14px;cursor:pointer;font-size:14px;font-weight:600}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:linear-gradient(180deg,#75c7f7,#3d9bd6);border:0;color:#08131d}
+.btn.ok{background:var(--acc2);border:0;color:#142000}
+.btn.no{color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:1.25fr 1fr}
+@media(max-width:860px){.g2{grid-template-columns:1fr}.tabs{margin-left:0}}
+/* roll */
+.roller{position:relative;height:200px;border-radius:12px;overflow:hidden;background:#0a0d12;border:1px solid var(--line);margin:14px 0}
+.strip{position:absolute;top:0;left:0;height:100%;display:flex;gap:10px;padding:0 10px;align-items:center;will-change:transform}
+.tile{flex:0 0 300px;height:140px;border-radius:10px;background:#222 center/cover;position:relative;box-shadow:0 4px 20px #0008}
+.tile b{position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font-size:13px;background:linear-gradient(transparent,#000c);border-radius:0 0 10px 10px}
+.marker{position:absolute;top:0;bottom:0;left:50%;width:3px;margin-left:-1.5px;background:var(--gold);box-shadow:0 0 14px var(--gold);z-index:2}
+.roller .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut)}
+.bigroll{font-size:22px;padding:14px 40px;border-radius:12px;letter-spacing:2px}
+/* players */
+.pcard{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin-bottom:10px}
+.pcard img.av{width:46px;height:46px;border-radius:8px}
+.pts{font-size:22px;font-weight:800;text-align:right}
+.pts small{display:block;font-size:11px;color:var(--mut);font-weight:500}
+.game{grid-column:1/-1;display:grid;grid-template-columns:184px 1fr;gap:12px;align-items:start}
+.game img{width:184px;height:86px;object-fit:cover;border-radius:8px}
+@media(max-width:520px){.game{grid-template-columns:1fr}.game img{width:100%;height:auto}}
+.stars{color:var(--gold);letter-spacing:1px}
+.bar{height:8px;background:#0b0e13;border-radius:99px;overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+.mut{color:var(--mut);font-size:13px}
+.warn{color:var(--gold);font-size:13px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#263042;color:#aebbd0;margin:2px 3px 0 0}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase}
+tr.loser td{color:var(--bad)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222b38;border:1px solid var(--line);padding:10px 16px;border-radius:10px;z-index:9;display:none;max-width:90vw}
+.win{animation:pop .6s ease}
+@keyframes pop{0%{transform:scale(.9);opacity:.3}60%{transform:scale(1.03)}100%{transform:scale(1);opacity:1}}
+.hide{display:none!important}
+.list .item{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.list .item img{width:120px;height:45px;object-fit:cover;border-radius:6px}
+.list .item.off{opacity:.45}
+.mini{width:70px;padding:5px 7px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎲 Steam <span>Челендж</span></h1>
+    <span class="pill" id="monthPill">—</span>
+    <span class="pill" id="syncPill">—</span>
+    <nav class="tabs">
+      <button data-tab="main" class="on">Головна</button>
+      <button data-tab="pool">Ігри</button>
+      <button data-tab="rules">Правила</button>
+    </nav>
+  </header>
+
+  <!-- MAIN -->
+  <section id="tab-main">
+    <div class="grid g2">
+      <div class="card">
+        <h2>Рол гри</h2>
+        <div class="row">
+          <select id="me" style="flex:1;min-width:180px"></select>
+          <button class="btn" id="addToggle">+ Новий гравець</button>
+        </div>
+        <div id="addForm" class="row hide" style="margin-top:10px">
+          <input id="nick" placeholder="Нік (Гоша, Маркіян…)" style="flex:1;min-width:140px">
+          <input id="steam" placeholder="Посилання на профіль Steam або ID" style="flex:2;min-width:220px">
+          <button class="btn pri" id="joinBtn">Додати</button>
+        </div>
+        <div class="roller" id="roller"><div class="empty">Обери себе і тисни РОЛ</div><div class="marker"></div><div class="strip" id="strip"></div></div>
+        <div class="row" style="justify-content:center">
+          <button class="btn pri bigroll" id="rollBtn">РОЛ</button>
+        </div>
+        <p class="mut" id="rollInfo" style="text-align:center;margin:10px 0 0"></p>
+      </div>
+
+      <div class="card">
+        <h2>Таблиця місяця</h2>
+        <table><thead><tr><th>#</th><th>Гравець</th><th>Пройдено</th><th style="text-align:right">Бали</th></tr></thead><tbody id="board"></tbody></table>
+        <p class="mut" id="boardNote" style="margin-bottom:0"></p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">Гравці і їхні ігри</h2>
+        <button class="btn" id="syncBtn">⟳ Оновити час зі Steam</button>
+      </div>
+      <div id="players"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Історія</h2>
+      <table><thead><tr><th>Коли</th><th>Гравець</th><th>Гра</th><th>Час</th><th>Результат</th></tr></thead><tbody id="history"></tbody></table>
+    </div>
+  </section>
+
+  <!-- POOL -->
+  <section id="tab-pool" class="hide">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Пул ігор <span id="poolCount" class="mut"></span></h2>
+        <div class="row">
+          <input id="q" placeholder="Пошук гри…">
+          <select id="poolFilter"><option value="in">У пулі</option><option value="out">Виключені</option><option value="all">Всі</option></select>
+          <select id="poolSort"><option value="name">За назвою</option><option value="diff">За складністю</option><option value="len">За тривалістю</option></select>
+        </div>
+      </div>
+      <p class="mut">Виключені ігри (онлайн-шутери, MMO тощо) не випадають на ролі. Складність (1–3) і очікувані години можна виправити вручну — вони впливають на бали.</p>
+      <div class="list" id="pool"></div>
+      <div class="row" style="justify-content:center;margin-top:12px"><button class="btn" id="more">Показати ще</button></div>
+    </div>
+  </section>
+
+  <!-- RULES -->
+  <section id="tab-rules" class="hide">
+    <div class="grid g2">
+      <div class="card">
+        <h2>Як рахуються бали</h2>
+        <p>Кожен тисне <b>РОЛ</b> і отримує випадкову гру зі спільного пулу. Поки гра активна, сайт кожні 30 хвилин бере з твого профілю Steam, скільки ти в неї награв.</p>
+        <p>Коли пройшов — тиснеш <b>«Пройшов»</b>, і нараховуються бали:</p>
+        <p style="background:var(--panel2);padding:12px;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px" id="formula"></p>
+        <ul class="mut">
+          <li><b>Складність</b> 1–3 рахується автоматично з тегів Steam (Souls-like, Difficult, Roguelike → вище; Casual, Cozy → нижче) і з того, наскільки рідкісні ачівки.</li>
+          <li><b>Очікувана тривалість</b> — медіанний час гри всіх гравців (дані SteamSpy).</li>
+          <li><b>Швидкість</b> = очікувані години ÷ твої години. Пройшов швидше — множник більший (максимум і мінімум задаються справа).</li>
+          <li><b>Здатися</b> — штраф, і можна ролити нову гру.</li>
+          <li>Хто в кінці місяця має <b>найменше балів</b> — купує гру 🛒</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Налаштування формули</h2>
+        <div id="settings" class="grid" style="gap:10px"></div>
+        <div class="row" style="margin-top:12px"><button class="btn pri" id="saveSettings">Зберегти</button></div>
+        <h2 style="margin-top:22px">Гравці</h2>
+        <div id="playerAdmin"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s)
+const img = id => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))
+const h = m => (m/60).toFixed(1)
+let S = null, poolLimit = 60, rolling = false
+
+function toast(t, ms=3500){ const el=$("#toast"); el.textContent=t; el.style.display="block"; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display="none",ms) }
+async function api(action, body){
+  const r = await fetch("/api/"+action, body ? {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)} : {})
+  const j = await r.json().catch(()=>({error:"Сервер не відповів"}))
+  if(!r.ok || j.error) throw new Error(j.error || r.statusText)
+  return j
+}
+function getMe(){ try{return localStorage.getItem("me")}catch{return null} }
+function setMe(v){ try{localStorage.setItem("me",v)}catch{} }
+const stars = n => "★".repeat(n)+"☆".repeat(5-n)
+const playerById = id => S.players.find(p=>p.id===id)
+const nickBySteam = sid => S.players.find(p=>p.steamId===sid)?.nick
+const played = a => a.manualMinutes ?? Math.max(0, a.current - a.baseline)
+
+function render(){
+  if(!S) return
+  const [y,m] = S.month.split("-")
+  const months=["січень","лютий","березень","квітень","травень","червень","липень","серпень","вересень","жовтень","листопад","грудень"]
+  const end = new Date(+y, +m, 1); const days = Math.ceil((end - Date.now())/864e5)
+  $("#monthPill").textContent = `${months[+m-1]} ${y} · до кінця ${days} дн.`
+  $("#syncPill").textContent = S.lastSync ? "Час оновлено " + new Date(S.lastSync).toLocaleTimeString("uk",{hour:"2-digit",minute:"2-digit"}) : "Час ще не оновлювався"
+
+  // me select
+  const me = getMe()
+  $("#me").innerHTML = S.players.length
+    ? `<option value="">— Хто ти? —</option>` + S.players.map(p=>`<option value="${p.id}" ${p.id===me?"selected":""}>${esc(p.nick)} (${esc(p.persona)})</option>`).join("")
+    : `<option value="">Спочатку додай гравця →</option>`
+  if(!S.players.length) $("#addForm").classList.remove("hide")
+  const active = S.assignments.find(a=>a.playerId===me && a.status==="active")
+  $("#rollBtn").disabled = !me || !!active || rolling
+  $("#rollInfo").textContent = !me ? "" : active ? `У тебе вже є гра: ${active.name}. Пройди її або здайся, щоб ролити знову.` : `У пулі ${S.games.filter(g=>!g.excluded).length} ігор`
+
+  // board
+  const sc = S.scores[S.month] || {}
+  const rows = S.players.map(p=>({p, pts: sc[p.id]||0, n: S.assignments.filter(a=>a.playerId===p.id && a.status==="done" && a.finishedAt && monthOf(a.finishedAt)===S.month).length}))
+    .sort((a,b)=>b.pts-a.pts)
+  const minPts = rows.length>1 ? Math.min(...rows.map(r=>r.pts)) : null
+  $("#board").innerHTML = rows.map((r,i)=>`<tr class="${rows.length>1 && r.pts===minPts?"loser":""}"><td>${i+1}</td><td>${esc(r.p.nick)}${rows.length>1 && r.pts===minPts?" 🛒":""}</td><td>${r.n}</td><td style="text-align:right;font-weight:700">${r.pts}</td></tr>`).join("") || `<tr><td colspan=4 class="mut">Ще немає гравців</td></tr>`
+  const prev = Object.keys(S.scores).filter(k=>k<S.month).sort().pop()
+  if(prev){ const ps=S.scores[prev]; const lo=S.players.filter(p=>ps[p.id]!==undefined).sort((a,b)=>(ps[a.id]||0)-(ps[b.id]||0))[0]; $("#boardNote").textContent = lo?`Минулого місяця (${prev}) гру купує: ${lo.nick}`:"" }
+  else $("#boardNote").textContent = "🛒 — хто зараз останній і купуватиме гру"
+
+  // players
+  $("#players").innerHTML = S.players.map(p=>{
+    const a = S.assignments.find(x=>x.playerId===p.id && x.status==="active")
+    let game = `<div class="game mut">Немає активної гри — час ролити!</div>`
+    if(a){
+      const g = S.games.find(x=>x.appid===a.appid) || {}
+      const pm = played(a), pct = Math.min(100, pm/60 / a.expectedHours * 100)
+      game = `<div class="game"><img src="${img(a.appid)}" alt="" onerror="this.style.visibility='hidden'">
+        <div><b>${esc(a.name)}</b> <span class="stars" title="Складність ${a.difficulty}">${stars(g.stars||1)}</span>
+        <div class="mut">Награно <b style="color:var(--text)">${h(pm)} год</b> з ~${a.expectedHours} год · складність ${a.difficulty}${a.manualMinutes!==undefined?" · вручну":""}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        ${a.tracked ? "" : `<div class="warn">⚠ Steam поки не показує час у цій грі для ${esc(p.nick)}. Якщо так і лишиться — впиши години вручну.</div>`}
+        <div class="row" style="margin-top:6px">
+          <button class="btn ok" onclick="finish('${a.id}',false)">✓ Пройшов</button>
+          <button class="btn no" onclick="finish('${a.id}',true)">Здатися</button>
+          <button class="btn" onclick="manual('${a.id}')">Години вручну</button>
+          <a class="mut" href="steam://run/${a.appid}">▶ Запустити в Steam</a>
+        </div></div></div>`
+    }
+    return `<div class="pcard"><img class="av" src="${esc(p.avatar)}" alt=""><div><b>${esc(p.nick)}</b><div class="mut">${esc(p.persona)}</div></div>
+      <div class="pts">${(S.scores[S.month]||{})[p.id]||0}<small>балів за місяць</small></div>${game}</div>`
+  }).join("") || `<p class="mut">Додай гравців угорі: нік + посилання на профіль Steam.</p>`
+
+  // history
+  const hist = S.assignments.filter(a=>a.status!=="active").sort((a,b)=>b.finishedAt-a.finishedAt)
+  $("#history").innerHTML = hist.map(a=>`<tr><td class="mut">${new Date(a.finishedAt).toLocaleDateString("uk")}</td><td>${esc(playerById(a.playerId)?.nick)}</td><td>${esc(a.name)}</td><td>${h(played(a))} год</td>
+    <td title="${esc(a.breakdown)}">${a.status==="done"?`<b style="color:var(--acc2)">+${a.points}</b>`:`<span style="color:var(--bad)">${a.points}</span>`} <span class="mut">${a.status==="done"?"пройдено":"здався"}</span></td></tr>`).join("") || `<tr><td colspan=5 class="mut">Поки нічого не пройдено</td></tr>`
+
+  renderPool(); renderRules()
+}
+const monthOf = t => new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit"}).format(new Date(t))
+
+function renderPool(){
+  const q = $("#q").value.trim().toLowerCase(), f = $("#poolFilter").value, so = $("#poolSort").value
+  let list = S.games.filter(g => (f==="all" || (f==="in")===!g.excluded) && (!q || g.name.toLowerCase().includes(q)))
+  if(so==="diff") list.sort((a,b)=>b.difficulty-a.difficulty)
+  if(so==="len") list.sort((a,b)=>b.expectedHours-a.expectedHours)
+  $("#poolCount").textContent = `· ${S.games.filter(g=>!g.excluded).length} у пулі з ${S.games.length}`
+  $("#pool").innerHTML = list.slice(0,poolLimit).map(g=>`<div class="item ${g.excluded?"off":""}">
+    <img loading="lazy" src="${img(g.appid)}" alt="" onerror="this.style.visibility='hidden'">
+    <div><b>${esc(g.name)}</b> <span class="stars">${stars(g.stars)}</span>
+      <div class="mut">Власник: ${g.owners.map(o=>esc(nickBySteam(o)||"…"+o.slice(-4))).join(", ")||"—"}</div>
+      <div>${g.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></div>
+    <div class="row" style="justify-content:flex-end">
+      <label class="mut">Складн. <input class="mini" type="number" step="0.1" min="1" max="3" value="${g.difficulty}" onchange="editGame(${g.appid},{difficulty:this.value===''?null:+this.value})"></label>
+      <label class="mut">Год <input class="mini" type="number" step="0.5" min="0.5" value="${g.expectedHours}" onchange="editGame(${g.appid},{expectedHours:this.value===''?null:+this.value})"></label>
+      <button class="btn" onclick="editGame(${g.appid},{excluded:${!g.excluded}})">${g.excluded?"Додати в пул":"Виключити"}</button>
+    </div></div>`).join("") || `<p class="mut">Нічого не знайдено</p>`
+  $("#more").classList.toggle("hide", list.length<=poolLimit)
+}
+
+function renderRules(){
+  const s = S.settings
+  $("#formula").textContent = `бали = (${s.basePerDifficulty} × складність + ${s.lengthMultiplier} × √очікувані_год) × швидкість\nшвидкість = очікувані_год ÷ твої_год, від ${s.speedMin} до ${s.speedMax}\nздатися = −${s.giveUpPenalty}`
+  $("#formula").style.whiteSpace="pre-wrap"
+  const labels = {basePerDifficulty:"Бали за одиницю складності",lengthMultiplier:"Множник за тривалість",speedMin:"Мінімальний множник швидкості",speedMax:"Максимальний множник швидкості",giveUpPenalty:"Штраф за «здатися»"}
+  if(!$("#settings").dataset.done){
+    $("#settings").innerHTML = Object.entries(labels).map(([k,l])=>`<label class="row" style="justify-content:space-between"><span>${l}</span><input class="mini" style="width:90px" type="number" step="0.1" data-k="${k}" value="${s[k]}"></label>`).join("")
+    $("#settings").dataset.done = 1
+  }
+  $("#playerAdmin").innerHTML = S.players.map(p=>`<div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(p.nick)} <span class="mut">${p.steamId}</span></span><button class="btn no" onclick="removePlayer('${p.id}')">Видалити</button></div>`).join("") || `<p class="mut">Немає</p>`
+}
+
+// ---- actions ----
+async function refresh(){ try{ S = await api("state"); render() }catch(e){ toast("Помилка: "+e.message) } }
+$("#me").onchange = e => { setMe(e.target.value); render() }
+$("#addToggle").onclick = () => $("#addForm").classList.toggle("hide")
+$("#joinBtn").onclick = async () => {
+  const b=$("#joinBtn"); b.disabled=true; b.textContent="Перевіряю Steam…"
+  try{
+    const r = await api("join",{nick:$("#nick").value, steam:$("#steam").value})
+    S = r.state; setMe(r.player.id); $("#nick").value=$("#steam").value=""; $("#addForm").classList.add("hide")
+    toast(`${r.player.nick} доданий! Його ігор у Steam: ${r.gamesAdded}`); render()
+  }catch(e){ toast(e.message) } finally{ b.disabled=false; b.textContent="Додати" }
+}
+$("#rollBtn").onclick = async () => {
+  const me = getMe(); if(!me) return
+  rolling = true; render()
+  const strip = $("#strip"); $("#roller .empty")?.remove()
+  // spin with placeholder tiles while the server picks
+  const pool = S.games.filter(g=>!g.excluded)
+  const rnd = () => pool[Math.floor(Math.random()*pool.length)]
+  let res
+  try{ res = await api("roll",{playerId:me}) }catch(e){ rolling=false; render(); return toast(e.message) }
+  const tiles = Array.from({length:44}, rnd); tiles[40] = {appid:res.assignment.appid, name:res.assignment.name}
+  strip.style.transition="none"; strip.style.transform="translateX(0)"
+  strip.innerHTML = tiles.map(t=>`<div class="tile" style="background-image:url('${img(t.appid)}')"><b>${esc(t.name)}</b></div>`).join("")
+  const W = 310, center = $("#roller").clientWidth/2
+  const target = 10 + 40*W + 150 - center + (Math.random()*160-80)
+  requestAnimationFrame(()=>{ strip.style.transition="transform 5.5s cubic-bezier(.12,.75,.15,1)"; strip.style.transform=`translateX(${-target}px)` })
+  setTimeout(()=>{
+    rolling=false; S=res.state; render()
+    strip.children[40].classList.add("win"); strip.children[40].style.outline="3px solid var(--gold)"
+    const a=res.assignment
+    $("#rollInfo").innerHTML = `🎉 <b>${esc(playerById(me).nick)}</b>, тобі випала <b>${esc(a.name)}</b> · складність ${a.difficulty} · ~${a.expectedHours} год`
+  },5700)
+}
+$("#syncBtn").onclick = async () => { const b=$("#syncBtn"); b.disabled=true; try{ S=await api("sync",{}); render(); toast("Час оновлено зі Steam") }catch(e){toast(e.message)} b.disabled=false }
+async function finish(id, giveUp){
+  const a = S.assignments.find(x=>x.id===id)
+  if(!confirm(giveUp?`Здатися в «${a.name}»? Буде штраф −${S.settings.giveUpPenalty}.`:`Підтвердити проходження «${a.name}»?`)) return
+  try{ S = await api("finish",{id,giveUp}); render(); toast(giveUp?"Здався. Можна ролити нову гру.":"Вітаю! Бали нараховано 🎉") }
+  catch(e){
+    if(!giveUp && /вручну/.test(e.message)){ const v=prompt("Steam не бачить час у цій грі. Скільки годин ти грав?"); if(v){ try{S=await api("finish",{id,manualHours:+v.replace(",",".")});render();toast("Бали нараховано 🎉")}catch(e2){toast(e2.message)} } }
+    else toast(e.message)
+  }
+}
+async function manual(id){
+  const v = prompt("Скільки годин награно в цій грі? (порожньо — повернути автоматичний підрахунок)")
+  if(v===null) return
+  try{ S = await api("manual",{id,hours:v.trim()===""?null:+v.replace(",",".")}); render() }catch(e){ toast(e.message) }
+}
+async function editGame(appid, patch){ try{ S = await api("game",{appid,...patch}); render() }catch(e){ toast(e.message) } }
+async function removePlayer(id){ if(!confirm("Видалити гравця і всю його історію?")) return; try{ S=await api("remove-player",{playerId:id}); render() }catch(e){toast(e.message)} }
+$("#saveSettings").onclick = async () => {
+  const body = {}; document.querySelectorAll("#settings input").forEach(i=>body[i.dataset.k]=+i.value)
+  try{ S = await api("settings",body); render(); toast("Збережено") }catch(e){toast(e.message)}
+}
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b))
+  ;["main","pool","rules"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab))
+})
+$("#q").oninput = $("#poolFilter").onchange = $("#poolSort").onchange = () => { poolLimit=60; renderPool() }
+$("#more").onclick = () => { poolLimit+=60; renderPool() }
+refresh(); setInterval(()=>{ if(!rolling) refresh() }, 60000)
+</script>
+</body>
+</html>
