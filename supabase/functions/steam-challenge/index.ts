@@ -59,6 +59,24 @@ async function auth(s: State, playerId: unknown, pin: unknown): Promise<Player> 
   return p
 }
 
+/** Site admin: password from the Supabase secret ADMIN_PASSWORD; 5 wrong tries per instance → 10 min pause */
+let adminFails = 0, adminLockUntil = 0
+async function admin(password: unknown) {
+  const real = Deno.env.get("ADMIN_PASSWORD")
+  if (!real) throw new Fail("Панель розробника вимкнена: додай секрет ADMIN_PASSWORD у Supabase", 403)
+  if (adminLockUntil > Date.now()) throw new Fail("Забагато спроб, зачекай 10 хв", 429)
+  if (password !== real) {
+    if (++adminFails >= 5) { adminLockUntil = Date.now() + 10 * 60e3; adminFails = 0 }
+    throw new Fail("Неправильний пароль адміна", 403, "BAD_ADMIN")
+  }
+  adminFails = 0
+}
+/** "YYYY-MM-DD" from the panel → noon Warsaw-ish that day; empty → now */
+const atTime = (d: unknown) => {
+  const m = String(d ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 11) : Date.now()
+}
+
 const activeOf = (s: State, pid: string) => s.assignments.find(a => a.playerId === pid && a.status === "active")
 
 /** Random completable game that every listed player can get and none of them has had before */
@@ -383,6 +401,62 @@ Deno.serve(async (req: Request) => {
         if (!/^\d{4}-\d{2}$/.test(String(body.month))) return err("Невідомий місяць")
         s.notes ??= {}
         s.notes[body.month] = String(body.text ?? "").slice(0, 120)
+        await save(s)
+        return json(publicState(s))
+      }
+
+      // ---------- developer panel (site admin, password in Supabase secret ADMIN_PASSWORD) ----------
+      case "admin-check": {
+        await admin(body.password)
+        return json({ ok: true })
+      }
+      case "admin-points": {  // add or take away points
+        await admin(body.password)
+        const p = s.players.find(x => x.id === body.target)
+        const pts = Math.round(Number(body.points))
+        if (!p) return err("Гравця не знайдено")
+        if (!pts) return err("Вкажи кількість балів (можна з мінусом)")
+        s.bonuses ??= []
+        s.bonuses.push({ id: uid(), playerId: p.id, points: pts, reason: String(body.reason || "Від адміна").slice(0, 120), at: atTime(body.date) })
+        await save(s)
+        return json(publicState(s))
+      }
+      case "admin-game": {  // count a game finished outside the site, scored by the normal formula
+        await admin(body.password)
+        const p = s.players.find(x => x.id === body.target)
+        const g = s.games[String(body.appid)]
+        const hours = Number(body.hours)
+        if (!p) return err("Гравця не знайдено")
+        if (!g) return err("Гру не знайдено в пулі")
+        if (!(hours > 0)) return err("Вкажи години")
+        const at = atTime(body.date)
+        const a: Assignment = {
+          id: uid(), playerId: p.id, appid: g.appid, name: g.name, status: "done",
+          rolledAt: at, finishedAt: at, baseline: 0, current: 0, tracked: false,
+          manualMinutes: Math.round(hours * 60), manualOk: true, confirmedBy: "admin",
+          difficulty: g.difficulty, expectedHours: expected(g),
+        }
+        const sc = scoreFor(a, s.settings)
+        Object.assign(a, sc, { breakdown: "Зараховано адміном: " + sc.breakdown })
+        if (body.preview) return json({ preview: a })
+        s.assignments.push(a)
+        await save(s)
+        return json(publicState(s))
+      }
+      case "admin-remove": {  // undo a bonus or a finished/given-up game entry
+        await admin(body.password)
+        const before = (s.bonuses ?? []).length + s.assignments.length
+        s.bonuses = (s.bonuses ?? []).filter(b => b.id !== body.id)
+        s.assignments = s.assignments.filter(a => !(a.id === body.id && a.status !== "active"))
+        if ((s.bonuses.length + s.assignments.length) === before) return err("Запис не знайдено")
+        await save(s)
+        return json(publicState(s))
+      }
+      case "admin-reset-pin": {
+        await admin(body.password)
+        const p = s.players.find(x => x.id === body.target)
+        if (!p) return err("Гравця не знайдено")
+        p.pinHash = undefined; p.pinFails = 0; p.pinLockUntil = undefined
         await save(s)
         return json(publicState(s))
       }

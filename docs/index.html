@@ -106,6 +106,7 @@ tr.loser td{color:var(--bad)}
       <button data-tab="archive">Архів</button>
       <button data-tab="pool">Ігри</button>
       <button data-tab="rules">Правила</button>
+      <button data-tab="admin" id="adminTabBtn" class="hide" title="Панель розробника">🛠</button>
     </nav>
   </header>
 
@@ -232,6 +233,46 @@ tr.loser td{color:var(--bad)}
     </div>
   </section>
 </div>
+  <!-- ADMIN (developer panel): open with #admin in the address -->
+  <section id="tab-admin" class="hide">
+    <div class="card" id="adminLogin">
+      <h2>🛠 Панель розробника</h2>
+      <p class="mut">Тільки для адміна сайту. Пароль — секрет <code>ADMIN_PASSWORD</code> у Supabase.</p>
+      <div class="row"><input id="adminPw" type="password" placeholder="Пароль адміна" style="flex:1"><button class="btn pri" id="adminLoginBtn">Увійти</button></div>
+    </div>
+    <div id="adminPanel" class="hide">
+      <div class="grid g2">
+        <div class="card">
+          <h2>🎮 Зарахувати пройдену гру</h2>
+          <p class="mut" style="margin-top:0">Для ігор, пройдених поза сайтом. Бали — за звичайною формулою (без модифікатора). Рахується як пройдена гра (бейджі, архів).</p>
+          <div class="grid" style="gap:8px">
+            <select id="agPlayer"></select>
+            <input id="agGame" list="agGames" placeholder="Назва гри з пулу…">
+            <datalist id="agGames"></datalist>
+            <div class="row"><input id="agH" type="number" min="0" placeholder="год" style="width:90px"><input id="agM" type="number" min="0" max="59" placeholder="хв" style="width:90px"><input id="agDate" type="date" title="Дата проходження (порожньо — сьогодні)"></div>
+            <div id="agPreview" class="mut"></div>
+            <div class="row"><button class="btn" id="agCalc">Порахувати</button><button class="btn pri" id="agAdd">Зарахувати</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>± Додати / зняти бали</h2>
+          <div class="grid" style="gap:8px">
+            <select id="apPlayer"></select>
+            <div class="row"><input id="apPoints" type="number" placeholder="напр. 10 або -5" style="width:150px"><input id="apDate" type="date" title="Дата (порожньо — сьогодні)"></div>
+            <input id="apReason" placeholder="За що (видно в історії)">
+            <div class="row"><button class="btn pri" id="apAdd">Застосувати</button></div>
+          </div>
+          <h2 style="margin-top:22px">🔑 Скинути PIN гравця</h2>
+          <div class="row"><select id="arPlayer" style="flex:1"></select><button class="btn no" id="arBtn">Скинути</button></div>
+          <div class="row" style="margin-top:22px"><button class="btn" id="adminOut">Вийти з панелі</button></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Записи (можна скасувати)</h2>
+        <table><thead><tr><th>Коли</th><th>Гравець</th><th>Що</th><th>Бали</th><th></th></tr></thead><tbody id="adminLog"></tbody></table>
+      </div>
+    </div>
+  </section>
 <div class="toast" id="toast"></div>
 <div class="modal hide" id="modal"><div class="box"><button class="x" onclick="closeModal()">×</button><div id="modalBody"></div></div></div>
 
@@ -427,12 +468,64 @@ function render(){
   const hist = [
     ...S.assignments.filter(a=>a.status!=="active").map(a=>({t:a.finishedAt, html:`<td>${esc(nick(a.playerId))}</td><td>${esc(a.name)}</td><td>${h(played(a))} год</td>
       <td title="${esc(a.breakdown)}">${a.status==="done"?`<b style="color:var(--acc2)">+${a.points}</b>`:`<span style="color:var(--bad)">${a.points}</span>`} <span class="mut">${({done:"пройдено",gaveup:"здався",rerolled:"ре-рол"})[a.status]}</span>${pendingManual(a)?' <span class="pend">· чекає підтвердження</span>':""}</td>`})),
-    ...S.bonuses.map(b=>({t:b.at, html:`<td>${esc(nick(b.playerId))}</td><td colspan=2>${esc(b.reason)}</td><td><b style="color:var(--gold)">+${b.points}</b> <span class="mut">бонус</span></td>`})),
+    ...S.bonuses.map(b=>({t:b.at, html:`<td>${esc(nick(b.playerId))}</td><td colspan=2>${esc(b.reason)}</td><td><b style="color:${b.points>=0?"var(--gold)":"var(--bad)"}">${b.points>=0?"+":""}${b.points}</b> <span class="mut">${b.points>=0?"бонус":"штраф"}</span></td>`})),
   ].sort((a,b)=>b.t-a.t)
   $("#history").innerHTML = hist.map(x=>`<tr><td class="mut">${new Date(x.t).toLocaleDateString("uk")}</td>${x.html}</tr>`).join("") || `<tr><td colspan=5 class="mut">Поки нічого не пройдено</td></tr>`
 
-  renderArchive(); renderPool(); renderRules()
+  renderArchive(); renderPool(); renderRules(); renderAdmin()
 }
+
+// ---- developer panel ----
+const adminPw = () => ls.get("adminPw")
+async function adminCall(action, body={}){
+  try{ const r = await api(action, { password: adminPw(), ...body }); if(r.players){ S = r; render() } return r }
+  catch(e){ if(e.code==="BAD_ADMIN"){ ls.set("adminPw", null); renderAdmin() } toast(e.message) }
+}
+function renderAdmin(){
+  const on = location.hash==="#admin" || !!adminPw()
+  $("#adminTabBtn").classList.toggle("hide", !on)
+  $("#adminLogin").classList.toggle("hide", !!adminPw())
+  $("#adminPanel").classList.toggle("hide", !adminPw())
+  if(!adminPw() || !S) return
+  const opts = S.players.map(p=>`<option value="${p.id}">${esc(p.nick)} (${esc(p.persona)})</option>`).join("")
+  for(const id of ["#agPlayer","#apPlayer","#arPlayer"]){ const el=$(id), v=el.value; el.innerHTML=opts; if(v) el.value=v }
+  if(!$("#agGames").dataset.n || +$("#agGames").dataset.n!==S.games.length){ $("#agGames").innerHTML = S.games.map(g=>`<option value="${esc(g.name)}">`).join(""); $("#agGames").dataset.n=S.games.length }
+  const rows = [
+    ...S.bonuses.map(b=>({t:b.at,id:b.id,who:b.playerId,what:esc(b.reason),pts:b.points})),
+    ...S.assignments.filter(a=>a.status!=="active").map(a=>({t:a.finishedAt,id:a.id,who:a.playerId,what:`${esc(a.name)} <span class="mut">${({done:"пройдено",gaveup:"здався",rerolled:"ре-рол"})[a.status]}${a.confirmedBy==="admin"?" · адмін":""}</span>`,pts:a.points})),
+  ].sort((a,b)=>b.t-a.t).slice(0,40)
+  $("#adminLog").innerHTML = rows.map(r=>`<tr><td class="mut">${new Date(r.t).toLocaleDateString("uk")}</td><td>${esc(nick(r.who))}</td><td>${r.what}</td><td><b>${r.pts>0?"+":""}${r.pts}</b></td><td style="text-align:right"><button class="btn no" onclick="adminRemove('${r.id}')">✕</button></td></tr>`).join("") || `<tr><td colspan=5 class="mut">Порожньо</td></tr>`
+}
+function agBody(){
+  const g = S.games.find(x=>x.name===$("#agGame").value.trim())
+  const hours = (+$("#agH").value||0) + (+$("#agM").value||0)/60
+  if(!g){ toast("Обери гру зі списку"); return null }
+  if(!hours){ toast("Вкажи час"); return null }
+  return { target:$("#agPlayer").value, appid:g.appid, hours, date:$("#agDate").value }
+}
+$("#adminLoginBtn").onclick = async () => {
+  const pw = $("#adminPw").value
+  try{ await api("admin-check",{password:pw}); ls.set("adminPw",pw); $("#adminPw").value=""; renderAdmin(); toast("Панель розробника відкрита 🛠") }catch(e){ toast(e.message) }
+}
+$("#adminOut").onclick = () => { ls.set("adminPw", null); renderAdmin() }
+$("#agCalc").onclick = async () => {
+  const b = agBody(); if(!b) return
+  const r = await adminCall("admin-game",{...b, preview:true})
+  if(r?.preview) $("#agPreview").innerHTML = `<b style="color:var(--acc2)">+${r.preview.points} балів</b> · ${esc(r.preview.breakdown)}`
+}
+$("#agAdd").onclick = async () => {
+  const b = agBody(); if(!b) return
+  if(!confirm(`Зарахувати «${$("#agGame").value}» гравцю ${nick(b.target)} (${b.hours.toFixed(2)} год)?`)) return
+  if(await adminCall("admin-game",b)){ toast("Гру зараховано 🎉"); $("#agPreview").textContent="" }
+}
+$("#apAdd").onclick = async () => {
+  const pts = Math.round(+$("#apPoints").value); if(!pts) return toast("Вкажи бали")
+  if(!confirm(`${pts>0?"Додати":"Зняти"} ${Math.abs(pts)} балів гравцю ${nick($("#apPlayer").value)}?`)) return
+  if(await adminCall("admin-points",{target:$("#apPlayer").value, points:pts, reason:$("#apReason").value, date:$("#apDate").value})){ toast("Готово"); $("#apPoints").value=$("#apReason").value="" }
+}
+$("#arBtn").onclick = async () => { if(confirm(`Скинути PIN гравця ${nick($("#arPlayer").value)}?`) && await adminCall("admin-reset-pin",{target:$("#arPlayer").value})) toast("PIN скинуто") }
+async function adminRemove(id){ if(confirm("Скасувати цей запис? Бали зникнуть з таблиці.") && await adminCall("admin-remove",{id})) toast("Скасовано") }
+addEventListener("hashchange", () => { renderAdmin(); if(location.hash==="#admin") $("#adminTabBtn").click() })
 
 function stats(pid){
   const mine = S.assignments.filter(a=>a.playerId===pid)
@@ -618,11 +711,11 @@ $("#saveSettings").onclick = async () => {
 }
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b))
-  ;["main","archive","pool","rules"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab))
+  ;["main","archive","pool","rules","admin"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==b.dataset.tab))
 })
 $("#q").oninput = $("#poolFilter").onchange = $("#poolSort").onchange = () => { poolLimit=60; renderPool() }
 $("#more").onclick = () => { poolLimit+=60; renderPool() }
-refresh(); setInterval(()=>{ if(!rolling && $("#modal").classList.contains("hide")) refresh() }, 60000); setInterval(tick, 1000)
+refresh().then(()=>{ if(location.hash==="#admin") $("#adminTabBtn").click() }); setInterval(()=>{ if(!rolling && $("#modal").classList.contains("hide")) refresh() }, 60000); setInterval(tick, 1000)
 </script>
 </body>
 </html>
