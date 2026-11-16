@@ -202,12 +202,13 @@ tr.loser td{color:var(--bad)}
       <div class="card">
         <h2>Як рахуються бали</h2>
         <p>Кожен тисне <b>РОЛ</b> і отримує випадкову гру зі спільного пулу. Поки гра активна, сайт кожні 30 хвилин бере з твого профілю Steam, скільки ти в неї награв.</p>
-        <p>Коли пройшов — тиснеш <b>«Пройшов»</b>, і нараховуються бали:</p>
+        <p>Коли пройшов — тиснеш <b>«Пройшов»</b>, і нараховуються бали. Зміни формули застосовуються до всіх пройдених ігор одразу — для всіх однаково.</p>
         <p style="background:var(--panel2);padding:12px;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap" id="formula"></p>
         <ul class="mut">
           <li><b>Складність</b> 1–3 рахується автоматично з тегів Steam (Souls-like, Difficult, Roguelike → вище; Casual, Cozy → нижче) і з того, наскільки рідкісні ачівки.</li>
-          <li><b>Очікувана тривалість</b> — медіанний час гри всіх гравців (дані SteamSpy).</li>
-          <li><b>Швидкість</b> = очікувані години ÷ твої години. Пройшов швидше — множник більший.</li>
+          <li><b>Складність</b> — головна частина балів: гра на 3 дає втричі більше, ніж гра на 1.</li>
+          <li><b>Години</b> — другорядний бонус: чим довше грав, тим більше, але все повільніше (√год): 4 год ≈ +6, 9 год ≈ +9, 25 год ≈ +15. Рахуються максимум до ліміту від очікуваної тривалості (дані SteamSpy), щоб не накручували, залишивши гру ввімкненою.</li>
+          <li><b>Швидкість на бали не впливає</b> — коротку гру не вигідно «пробігти».</li>
           <li><b>Здатися</b> — штраф, і можна ролити нову гру.</li>
           <li><b>Ре-рол</b> — замінити гру на іншу за менший штраф, обмежена кількість на місяць.</li>
           <li><b>Години вручну</b> (коли Steam не бачить час) зараховуються після підтвердження другом.</li>
@@ -605,8 +606,8 @@ function renderPool(){
 
 function renderRules(){
   const s = S.settings
-  $("#formula").textContent = `бали = (${s.basePerDifficulty} × складність + ${s.lengthMultiplier} × √очікувані_год) × швидкість × модифікатор\nшвидкість = очікувані_год ÷ твої_год, від ${s.speedMin} до ${s.speedMax}\nздатися = −${s.giveUpPenalty}   ре-рол = −${s.rerollPenalty} (${S.rerollsAllowed} на місяць)\nперемога в дуелі = +${s.duelBonus}`
-  const labels = {basePerDifficulty:"Бали за одиницю складності",lengthMultiplier:"Множник за тривалість",speedMin:"Мінімальний множник швидкості",speedMax:"Максимальний множник швидкості",giveUpPenalty:"Штраф за «здатися»",rerollPenalty:"Штраф за ре-рол",rerollsPerMonth:"Ре-ролів на місяць",duelBonus:"Бонус за перемогу в дуелі"}
+  $("#formula").textContent = `бали = ${s.basePerDifficulty} × складність + ${s.lengthMultiplier} × √твої_години  (× модифікатор місяця)\nгодини рахуються максимум до ${s.maxHoursFactor}× очікуваної тривалості\nздатися = −${s.giveUpPenalty}   ре-рол = −${s.rerollPenalty} (${S.rerollsAllowed} на місяць)\nперемога в дуелі = +${s.duelBonus}`
+  const labels = {basePerDifficulty:"Бали за одиницю складності",lengthMultiplier:"Множник за години (× √год)",maxHoursFactor:"Ліміт годин (× очікуваної тривалості)",giveUpPenalty:"Штраф за «здатися»",rerollPenalty:"Штраф за ре-рол",rerollsPerMonth:"Ре-ролів на місяць",duelBonus:"Бонус за перемогу в дуелі"}
   if(!$("#settings").dataset.done){
     $("#settings").innerHTML = Object.entries(labels).map(([k,l])=>`<label class="row" style="justify-content:space-between"><span>${l}</span><input class="mini" style="width:90px" type="number" step="0.1" data-k="${k}" value="${s[k]}"></label>`).join("")
     $("#settings").dataset.done = 1

@@ -29,7 +29,7 @@ export type Assignment = {
   manualMinutes?: number    // manual override
   difficulty: number; expectedHours: number
   points?: number; breakdown?: string
-  speed?: number                         // speed multiplier at finish
+  speed?: number                         // legacy (old speed-based formula)
   mult?: number; modLabel?: string       // month modifier bonus fixed at roll time
   duelId?: string
   manualOk?: boolean; confirmedBy?: string // manual hours need a friend's confirmation
@@ -41,8 +41,8 @@ export type Duel = {
 }
 export type Settings = {
   basePerDifficulty: number   // points per difficulty unit (difficulty 1..3)
-  lengthMultiplier: number    // bonus = mult * sqrt(expected hours)
-  speedMin: number; speedMax: number
+  lengthMultiplier: number    // bonus = mult * sqrt(hours you actually played)
+  maxHoursFactor: number      // hours count only up to this × expected length (no AFK farming)
   giveUpPenalty: number
   rerollPenalty: number; rerollsPerMonth: number
   duelBonus: number
@@ -65,7 +65,7 @@ const SEED_LIBRARIES: Library[] = [
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
-  basePerDifficulty: 10, lengthMultiplier: 2, speedMin: 0.7, speedMax: 1.5, giveUpPenalty: 5,
+  basePerDifficulty: 10, lengthMultiplier: 3, maxHoursFactor: 2, giveUpPenalty: 5,
   rerollPenalty: 3, rerollsPerMonth: 1, duelBonus: 10,
 }
 
@@ -152,17 +152,31 @@ export function computeGame(appid: number, m: Meta, owners: string[], prev?: Gam
 }
 export const expected = (g: { expectedHours: number; expectedOverride?: number }) => g.expectedOverride ?? g.expectedHours
 
+/** Difficulty is the main part; time played adds a smaller bonus that grows slower and slower
+ *  (√hours), capped at maxHoursFactor × expected length so leaving the game running doesn't pay. */
 export function scoreFor(a: Assignment, s: Settings) {
   const minutes = a.manualMinutes ?? Math.max(0, a.current - a.baseline)
-  const hours = Math.max(0.5, minutes / 60)
-  const exp = a.expectedHours
+  const raw = minutes / 60
+  const cap = Math.max(1, s.maxHoursFactor * a.expectedHours)
+  const hours = Math.round(Math.min(raw, cap) * 10) / 10
   const base = s.basePerDifficulty * a.difficulty
-  const len = s.lengthMultiplier * Math.sqrt(exp)
-  const speed = Math.max(s.speedMin, Math.min(s.speedMax, exp / hours))
+  const len = s.lengthMultiplier * Math.sqrt(hours)
   const mult = a.mult ?? 1
-  const points = Math.round((base + len) * speed * mult)
-  const breakdown = `(${s.basePerDifficulty}×${a.difficulty} складн. + ${s.lengthMultiplier}×√${exp} год) × ${speed.toFixed(2)} швидкість${mult !== 1 ? ` × ${mult} (${a.modLabel ?? "модифікатор"})` : ""} = ${points}`
-  return { points, breakdown, speed: Math.round(speed * 100) / 100 }
+  const points = Math.round((base + len) * mult)
+  const breakdown = `${s.basePerDifficulty}×${a.difficulty} складн. + ${s.lengthMultiplier}×√${hours} год${raw > cap ? ` (ліміт ${s.maxHoursFactor}× від ~${a.expectedHours})` : ""}` +
+    `${mult !== 1 ? ` × ${mult} (${a.modLabel ?? "модифікатор"})` : ""} = ${points}`
+  return { points, breakdown, speed: undefined }
+}
+
+/** Formula changes apply to everyone: finished games are re-scored with the current settings */
+export function rescore(s: State) {
+  for (const a of s.assignments) {
+    if (a.status !== "done") continue
+    const sc = scoreFor(a, s.settings)
+    a.points = sc.points
+    a.breakdown = (a.confirmedBy === "admin" ? "Зараховано адміном: " : "") + sc.breakdown
+    delete a.speed
+  }
 }
 
 // ---------- Steam ----------
@@ -237,12 +251,19 @@ export async function load(): Promise<State> {
   const s = (data?.value ?? null) as State | null
   if (s) {
     s.settings = { ...DEFAULT_SETTINGS, ...s.settings }
+    if (!(s as any).formula || (s as any).formula < 2) {   // v2: no speed multiplier, length bonus on hours played
+      (s as any).formula = 2
+      const st = s.settings as any
+      delete st.speedMin; delete st.speedMax
+      st.lengthMultiplier = DEFAULT_SETTINGS.lengthMultiplier
+    }
     s.libraries ??= SEED_LIBRARIES.filter(l => !s.players.some(p => p.steamId === l.steamId))
     // re-apply current rules on every load (keeps manual choices)
     for (const [id, g] of Object.entries(s.games)) {
       if ((g as any).needsMeta) continue
       s.games[id] = computeGame(g.appid, g, g.owners, g)
     }
+    rescore(s)
     return s
   }
   return { players: [], libraries: [...SEED_LIBRARIES], assignments: [], games: {}, settings: DEFAULT_SETTINGS }
@@ -350,7 +371,7 @@ export const BADGES: Badge[] = [
   { id: "first", icon: "🩸", name: "Перша кров", desc: "Пройти першу гру" },
   { id: "five", icon: "📚", name: "Колекціонер", desc: "Пройти 5 ігор" },
   { id: "ten", icon: "🎖", name: "Ветеран", desc: "Пройти 10 ігор" },
-  { id: "speed", icon: "🏃", name: "Спідраннер", desc: "Пройти з максимальним множником швидкості" },
+  { id: "speed", icon: "🏃", name: "Спідраннер", desc: "Пройти вдвічі швидше за очікуване (для честі, не для балів)" },
   { id: "hard", icon: "💀", name: "Безсмертний", desc: "Пройти гру зі складністю 2.5+" },
   { id: "souls", icon: "🗡", name: "Душі не продав", desc: "Пройти Souls-like" },
   { id: "marathon", icon: "⏳", name: "Марафонець", desc: "Пройти гру на 30+ годин" },
@@ -388,7 +409,7 @@ export function playerBadges(s: State, results: ReturnType<typeof monthResults>)
     if (done.length >= 1) b.push("first")
     if (done.length >= 5) b.push("five")
     if (done.length >= 10) b.push("ten")
-    if (done.some(a => (a.speed ?? 0) >= s.settings.speedMax)) b.push("speed")
+    if (done.some(a => a.expectedHours >= 2 && mins(a) > 0 && mins(a) / 60 <= a.expectedHours / 2)) b.push("speed")
     if (done.some(a => a.difficulty >= 2.5)) b.push("hard")
     if (done.some(a => tags(a).some(t => t === "Souls-like" || t === "Soulslike"))) b.push("souls")
     if (done.some(a => a.expectedHours >= 30)) b.push("marathon")

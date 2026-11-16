@@ -1,7 +1,7 @@
 import {
   load, save, syncActive, computeGame, scoreFor, expected, monthKey,
   resolveSteamId, summary, playtime, fetchMeta, eligible, addOwnedToPool, refreshLibraries,
-  monthScores, monthResults, hasState, importFrom, playerBadges, pinHash, validPin, modFor, MODS, BADGES,
+  monthScores, monthResults, hasState, importFrom, rescore, playerBadges, pinHash, validPin, modFor, MODS, BADGES,
   type State, type Assignment, type Game, type Player,
 } from "./core.ts"
 
@@ -481,6 +481,7 @@ Deno.serve(async (req: Request) => {
         const v = body.values ?? {}
         for (const k of Object.keys(s.settings) as (keyof State["settings"])[])
           if (v[k] !== undefined && !isNaN(Number(v[k]))) s.settings[k] = Number(v[k])
+        rescore(s)
         await save(s)
         return json(publicState(s))
       }
